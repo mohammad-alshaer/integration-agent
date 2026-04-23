@@ -1,0 +1,13 @@
+[project]
+name = "integration-agent-schemas"
+version = "0.1.0"
+description = "Pydantic v2 contracts shared by all Integration-Agent specialists"
+requires-python = ">=3.11,<3.13"
+dependencies = ["pydantic>=2.9"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

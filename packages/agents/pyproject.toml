@@ -1,0 +1,19 @@
+[project]
+name = "integration-agent-agents"
+version = "0.1.0"
+description = "LangGraph graph + specialists + LLM client for Integration-Agent"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "integration-agent-schemas",
+    "pydantic>=2.9",
+    "diskcache>=5.6",
+    "google-genai>=1.0",
+    "python-dotenv>=1.0",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
