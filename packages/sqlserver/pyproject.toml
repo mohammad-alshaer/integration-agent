@@ -1,0 +1,18 @@
+[project]
+name = "integration-agent-sqlserver"
+version = "0.1.0"
+description = "SQL Server introspection, FK-closure sampling, PII redaction, Parquet export"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "integration-agent-schemas",
+    "pyodbc>=5.0",
+    "pandas>=2.2",
+    "pyarrow>=18.0",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
