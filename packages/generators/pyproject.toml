@@ -1,17 +1,11 @@
 [project]
-name = "integration-agent-agents"
+name = "integration-agent-generators"
 version = "0.1.0"
-description = "LangGraph graph + specialists + LLM client for Integration-Agent"
+description = "Per-pattern transformation generators (SQL + dbt tests) for Integration-Agent"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "integration-agent-schemas",
-    "integration-agent-generators",
     "pydantic>=2.9",
-    "diskcache>=5.6",
-    "google-genai>=1.0",
-    "python-dotenv>=1.0",
-    "duckdb>=1.1",
-    "voyageai>=0.3",
 ]
 
 [build-system]
