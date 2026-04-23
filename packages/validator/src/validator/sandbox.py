@@ -21,17 +21,26 @@ log = logging.getLogger(__name__)
 
 
 class Sandbox:
-    """Session-scoped DuckDB sandbox over the Parquet-exported source samples."""
+    """Session-scoped DuckDB sandbox over the Parquet-exported source samples.
+
+    By default the sandbox is in-memory. Pass `db_path` to persist the views to
+    a file so other processes (notably dbt-duckdb) can connect to the same state.
+    """
 
     def __init__(
         self,
         sample_dir: Path,
         *,
         sandbox_schema: str = "source_raw",
+        db_path: Path | None = None,
     ) -> None:
         self._sample_dir = sample_dir
         self._schema = sandbox_schema
-        self._con = duckdb.connect(":memory:")
+        self._db_path = db_path
+        target = ":memory:" if db_path is None else str(db_path)
+        if db_path is not None:
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._con = duckdb.connect(target)
         self._con.execute(f"CREATE SCHEMA IF NOT EXISTS {sandbox_schema}")
         self._loaded: dict[tuple[str, str], str] = {}
         self._load_all()

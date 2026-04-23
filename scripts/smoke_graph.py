@@ -25,7 +25,9 @@ import truststore
 
 truststore.inject_into_ssl()
 
+import os  # noqa: E402
 import shutil  # noqa: E402
+import subprocess  # noqa: E402
 import tempfile  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
@@ -37,6 +39,7 @@ from agents.graph import build_graph  # noqa: E402
 from agents.pattern_classifier import ClassifierOutput  # noqa: E402
 from agents.semantic_matcher import MatcherOutput, RerankedCandidate  # noqa: E402
 from agents.vector_store import SourceVectorStore  # noqa: E402
+from dbt_emit import emit_dbt_project  # noqa: E402
 from generators.derived import DerivedSpec  # noqa: E402
 from schemas import (  # noqa: E402
     ColumnProfile,
@@ -399,8 +402,26 @@ def main() -> int:
     source = build_source_profile()
     target = build_target_profile()
 
-    # Stand up a tiny Parquet sample directory for the validator
+    # Stand up a tiny Parquet sample directory for the validator. We keep it alive
+    # until AFTER `dbt build` runs (DuckDB views reference these Parquet paths).
     sample_dir = Path(tempfile.mkdtemp(prefix="smoke_graph_samples_"))
+    # Persistent DuckDB sandbox so dbt-duckdb can later connect to the same file
+    sandbox_db = Path(".duckdb/smoke_sandbox.duckdb")
+    if sandbox_db.exists():
+        sandbox_db.unlink()
+    dbt_out = Path("benchmarks/smoke/out/dbt")
+    if dbt_out.exists():
+        shutil.rmtree(dbt_out)
+
+    final: dict
+    specs = []
+    reports = {}
+    classifications = {}
+    llm_calls = 0
+    sandbox: Sandbox | None = None
+    store: SourceVectorStore | None = None
+    dbt_ok = False
+
     try:
         write_sample_parquets(sample_dir)
 
@@ -411,7 +432,7 @@ def main() -> int:
         store = SourceVectorStore(db_path, embedder)
         store.add_columns(source)
 
-        sandbox = Sandbox(sample_dir)
+        sandbox = Sandbox(sample_dir, db_path=sandbox_db)
         llm = FakeLLM()
         graph = build_graph(embedder, llm, store, sandbox=sandbox, max_retries=1)
 
@@ -422,14 +443,61 @@ def main() -> int:
             "target_fqns": target_fqns,
         }
         final = graph.invoke(initial)
+        specs = final.get("specs", [])
+        reports = final.get("validation_reports", {})
+        classifications = final.get("classifications", {})
+        llm_calls = len(llm.calls)
+
+        # Emit a dbt project from the graph's specs
+        print("\n=== Emitting dbt project ===")
+        emitted = emit_dbt_project(specs, dbt_out, sandbox_db, run_id="smoke")
+        print(f"project.yml: {emitted.project_yml}")
+        print(f"profiles.yml: {emitted.profiles_yml}")
+        print(f"schema.yml: {emitted.schema_yml}")
+        for mf in emitted.model_files:
+            print(f"model: {mf}")
+
+        # dbt-duckdb needs to open the sandbox DB file, so release our handle first
+        if sandbox is not None:
+            sandbox.close()
+            sandbox = None
+
+        print("\n=== Running dbt build ===")
+        env = os.environ.copy()
+        env["DBT_PROFILES_DIR"] = str(dbt_out)
+        dbt_proc = subprocess.run(  # noqa: S603
+            [
+                str(Path(".venv/Scripts/python.exe").resolve()),
+                "-m",
+                "dbt.cli.main",
+                "build",
+                "--project-dir",
+                str(dbt_out),
+                "--profiles-dir",
+                str(dbt_out),
+                "--target",
+                "dev",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        print(dbt_proc.stdout)
+        if dbt_proc.returncode != 0:
+            print("dbt build STDERR:")
+            print(dbt_proc.stderr)
+            print(f"FAIL: dbt build exited {dbt_proc.returncode}")
+            return 1
+        dbt_ok = True
+        print("dbt build: OK")
     finally:
+        if sandbox is not None:
+            sandbox.close()
+        if store is not None:
+            store.close()
         shutil.rmtree(sample_dir, ignore_errors=True)
 
-    specs = final.get("specs", [])
-    reports = final.get("validation_reports", {})
-    classifications = final.get("classifications", {})
-
-    print(f"=== FakeLLM calls: {len(llm.calls)} ===")
+    print(f"=== FakeLLM calls: {llm_calls} ===")
     pattern_counts: dict[str, int] = {}
     for pc in classifications.values():
         pattern_counts[pc.pattern.value] = pattern_counts.get(pc.pattern.value, 0) + 1
@@ -446,10 +514,10 @@ def main() -> int:
         print(f"   llm_conf: {s.llm_confidence:.2f}")
         print()
 
-    sandbox.close()
-    store.close()
-
-    # Assertions
+    # Assertions (dbt already ran inside the try block above)
+    if not dbt_ok:
+        print("FAIL: dbt build did not succeed")
+        return 1
     if not specs:
         print("FAIL: expected at least one MappingSpec")
         return 1

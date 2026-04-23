@@ -24,6 +24,7 @@ benchmarks/*/out/
 
 # Ad-hoc run outputs
 tmp/
+benchmarks/smoke/
 
 # dbt
 dbt_target/
