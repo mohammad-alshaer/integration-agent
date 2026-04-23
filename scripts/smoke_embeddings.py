@@ -20,13 +20,15 @@ from pathlib import Path  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
 from agents.embeddings import VoyageEmbedder  # noqa: E402
-from agents.vector_store import SourceVectorStore, column_embed_text  # noqa: E402
+from agents.vector_store import SourceVectorStore  # noqa: E402
 from schemas import ColumnProfile, SchemaProfile, TableProfile  # noqa: E402
 
 load_dotenv()
 
 
-def _col(schema: str, table: str, name: str, pos: int, sql_type: str, desc: str | None = None) -> ColumnProfile:
+def _col(
+    schema: str, table: str, name: str, pos: int, sql_type: str, desc: str | None = None
+) -> ColumnProfile:
     return ColumnProfile(
         table_schema=schema,
         table_name=table,
@@ -53,10 +55,38 @@ def main() -> int:
                 table_name="Person",
                 row_count_estimate=19972,
                 columns=[
-                    _col("Person", "Person", "FirstName", 5, "nvarchar(50)", "First name of the person."),
-                    _col("Person", "Person", "LastName", 7, "nvarchar(50)", "Last name of the person."),
-                    _col("Person", "Person", "MiddleName", 6, "nvarchar(50)", "Middle name or initial."),
-                    _col("Person", "Person", "BusinessEntityID", 1, "int", "Primary key for the person."),
+                    _col(
+                        "Person",
+                        "Person",
+                        "FirstName",
+                        5,
+                        "nvarchar(50)",
+                        "First name of the person.",
+                    ),
+                    _col(
+                        "Person",
+                        "Person",
+                        "LastName",
+                        7,
+                        "nvarchar(50)",
+                        "Last name of the person.",
+                    ),
+                    _col(
+                        "Person",
+                        "Person",
+                        "MiddleName",
+                        6,
+                        "nvarchar(50)",
+                        "Middle name or initial.",
+                    ),
+                    _col(
+                        "Person",
+                        "Person",
+                        "BusinessEntityID",
+                        1,
+                        "int",
+                        "Primary key for the person.",
+                    ),
                 ],
             ),
             TableProfile(
@@ -64,9 +94,30 @@ def main() -> int:
                 table_name="SalesOrderHeader",
                 row_count_estimate=31465,
                 columns=[
-                    _col("Sales", "SalesOrderHeader", "OrderDate", 6, "datetime", "Dates the sales order was created."),
-                    _col("Sales", "SalesOrderHeader", "TotalDue", 25, "money", "Total due including tax and freight."),
-                    _col("Sales", "SalesOrderHeader", "SubTotal", 23, "money", "Sales subtotal before tax."),
+                    _col(
+                        "Sales",
+                        "SalesOrderHeader",
+                        "OrderDate",
+                        6,
+                        "datetime",
+                        "Dates the sales order was created.",
+                    ),
+                    _col(
+                        "Sales",
+                        "SalesOrderHeader",
+                        "TotalDue",
+                        25,
+                        "money",
+                        "Total due including tax and freight.",
+                    ),
+                    _col(
+                        "Sales",
+                        "SalesOrderHeader",
+                        "SubTotal",
+                        23,
+                        "money",
+                        "Sales subtotal before tax.",
+                    ),
                 ],
             ),
         ],
@@ -85,7 +136,9 @@ def main() -> int:
     print(f"Indexed {n} source columns.")
 
     # Query 1: target column very similar to Person.Person.FirstName
-    target_text = "DimCustomer.FirstName | type: nvarchar(50) | description: First name of the customer."
+    target_text = (
+        "DimCustomer.FirstName | type: nvarchar(50) | description: First name of the customer."
+    )
     q_emb = embedder.embed([target_text])[0]
     neighbors = store.top_k(q_emb, k=5)
     print(f"\nTarget: {target_text}")
