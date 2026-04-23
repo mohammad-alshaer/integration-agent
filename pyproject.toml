@@ -42,7 +42,9 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "B", "UP", "SIM"]
-ignore = ["E501"]
+# B008: typer's idiomatic typer.Option(...) defaults trip this; safe for immutable sentinels.
+# E501: line-too-long handled by ruff format.
+ignore = ["E501", "B008"]
 
 [tool.ruff.lint.isort]
 known-first-party = [

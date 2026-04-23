@@ -1,0 +1,20 @@
+[project]
+name = "integration-agent-worker"
+version = "0.1.0"
+description = "CLI worker — profile schemas, run the agent graph, emit dbt models"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "integration-agent-schemas",
+    "integration-agent-agents",
+    "integration-agent-sqlserver",
+    "typer>=0.12",
+    "truststore>=0.10",
+    "python-dotenv>=1.0",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -15,12 +15,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
+import time
 from pathlib import Path
 from typing import Protocol, TypeVar
 
 import diskcache
 from pydantic import BaseModel
+
+log = logging.getLogger(__name__)
+
+# Retry transient provider errors (5xx, 429). First retry after 1s, then 2s, 4s.
+_RETRY_DELAYS_SEC = (1.0, 2.0, 4.0)
+_TRANSIENT_HTTP_CODES = (429, 500, 502, 503, 504)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -92,16 +100,46 @@ class GeminiProvider:
 
         from google.genai import types
 
-        response = self._client.models.generate_content(
-            model=self.model,
-            contents=user,
-            config=types.GenerateContentConfig(
-                system_instruction=system,
-                response_mime_type="application/json",
-                response_schema=schema,
-                temperature=0.2,
-            ),
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            response_mime_type="application/json",
+            response_schema=schema,
+            temperature=0.2,
         )
-        result: T = response.parsed
-        set_cached(key, result.model_dump())
-        return result
+
+        last_exc: Exception | None = None
+        for attempt, delay in enumerate((*_RETRY_DELAYS_SEC, None), start=1):
+            try:
+                response = self._client.models.generate_content(
+                    model=self.model,
+                    contents=user,
+                    config=config,
+                )
+                result: T = response.parsed
+                set_cached(key, result.model_dump())
+                return result
+            except Exception as exc:  # noqa: BLE001
+                if not _is_transient(exc):
+                    raise
+                last_exc = exc
+                if delay is None:
+                    break
+                log.warning(
+                    "GeminiProvider transient error (attempt %d), retrying in %.1fs: %s",
+                    attempt,
+                    delay,
+                    exc,
+                )
+                time.sleep(delay)
+
+        assert last_exc is not None
+        raise last_exc
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Best-effort detection of retryable HTTP errors from google-genai."""
+    code = getattr(exc, "code", None)
+    if isinstance(code, int) and code in _TRANSIENT_HTTP_CODES:
+        return True
+    msg = str(exc)
+    return any(str(c) in msg for c in _TRANSIENT_HTTP_CODES) or "UNAVAILABLE" in msg
