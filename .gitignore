@@ -22,6 +22,9 @@ benchmarks/*/out/
 *.duckdb
 *.duckdb.wal
 
+# Ad-hoc run outputs
+tmp/
+
 # dbt
 dbt_target/
 target/
