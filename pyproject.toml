@@ -6,7 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11,<3.13"
 license = { text = "MIT" }
 authors = [{ name = "Mohammad Falshaer" }]
-dependencies = []
+dependencies = [
+    "pyodbc>=5.0",
+]
 
 [project.optional-dependencies]
 dev = [
