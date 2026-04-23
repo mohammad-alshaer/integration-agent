@@ -18,6 +18,8 @@ dependencies = [
     "truststore>=0.10",
     "typer>=0.12",
     "pandas>=2.2",
+    "voyageai>=0.3",
+    "langgraph>=0.2,<0.3",
 ]
 
 [project.optional-dependencies]
