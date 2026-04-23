@@ -1,0 +1,82 @@
+  # Project: AI Agent for Automated Schema Mapping and Data Integration
+
+  ## Overview
+
+  I am building a production-grade multi-agent AI system that automates the schema mapping and transformation work data engineers do when integrating data between systems (for example: transactional OLTP databases → analytical data warehouses, or SaaS applications → unified
+  customer models).
+                                                                                                                                                                                                                                                                                            Schema mapping is currently a slow, judgment-heavy task done by humans: inspecting source and target schemas, matching fields, proposing transformations, handling edge cases, validating against sample data, and documenting rationale. This project automates that work with an agent   that reasons over schemas, proposes mappings, generates production-ready code, validates its own output, and keeps humans in the loop for review via a web UI and Git pull requests.                                                                                                   
+  This is not a prototype or demo — the goal is a fully production-grade system with every component built out.
+
+  ## What the system does end to end
+
+  Given a source schema and a target schema, the agent must:
+
+  1. **Discover and profile** both schemas — pull column metadata, data types, nullability, primary/foreign keys, sample rows, and statistical profiles (null rate, cardinality, distributions, top values).
+  2. **Infer semantic types** — recognize patterns beyond raw data types: email, currency, country code, date hierarchy, identifier, etc.
+  3. **Propose mappings** for each target field by semantic matching against source fields, using embedding similarity combined with retrieval-augmented generation over a corpus of past mapping decisions.
+  4. **Classify transformation patterns** — for each mapping, select which of nine transformation patterns applies: 1:1 rename, N:1 concatenation, 1:N split/parse, derived/computed, constant, conditional/case logic, lookup/reference join, aggregation, unit conversion. Support
+  composite chains of multiple patterns.
+  5. **Generate transformation code** as dbt models — executable SQL with Jinja references, generated tests, and per-column rationale comments.
+  6. **Self-validate in a sandbox** — apply proposed transformations to sample source rows inside an isolated DuckDB instance and verify target constraints pass. Retry with structured error hints on failure (max 3 retries per mapping).
+  7. **Flag for human review** — surface low-confidence mappings, gaps (target fields with no source), and ambiguities through a web interface that supports inline SQL editing, live test rerun, and approve/reject/edit actions.
+  8. **Learn from feedback** — when humans edit or reject mappings, persist corrections in a structured feedback store indexed for retrieval on future similar mappings.
+
+  ## Architecture
+
+  The system is a multi-specialist agent graph built with LangGraph, coordinated by a top-level Coordinator agent with these specialists:
+
+  - **Schema Explorer** — inspects source + target schemas, produces a structured summary with inferred semantic types and quality flags.
+  - **Semantic Matcher** — for each target field, produces ranked candidate source fields using embeddings + past-mapping retrieval.
+  - **Pattern Classifier** — classifies each proposed mapping into one of the nine transformation patterns (plus composite).
+  - **Transformation Generator** — one module per pattern; each emits SQL and pattern-specific test assertions.
+  - **Validator** — orchestrates the DuckDB sandbox, runs tests, feeds structured error hints back to the Transformation Generator for retries.
+
+  All inter-agent communication uses strictly-typed Pydantic messages. Every LLM call uses Anthropic's structured-output (tool-use) mode to enforce response schemas. Token usage, latency, and cost are tracked per mapping.
+
+  ## Tech stack
+
+  - **Language**: Python 3.11
+  - **Agent framework**: LangGraph
+  - **LLM**: Anthropic Claude via the anthropic SDK; Voyage or OpenAI for embeddings (Anthropic does not provide embeddings)
+  - **Backend**: FastAPI with async SQLAlchemy and Alembic migrations
+  - **Frontend**: Next.js 14 with shadcn/ui and TanStack Query
+  - **Metadata + vector store**: Postgres 16 with the pgvector extension
+  - **Sandbox**: DuckDB in-process
+  - **Source/target databases**: Microsoft SQL Server, accessed via pyodbc from INFORMATION_SCHEMA and sys.extended_properties
+  - **Output format**: dbt models — .sql model files with Jinja, schema.yml with tests and meta, tests/ directory with pattern-specific assertions
+  - **Validation**: Pydantic v2 for all structured outputs and inter-agent messages
+  - **Observability**: structlog + OpenTelemetry (Langfuse or LangSmith for LLM-specific traces acceptable)
+  - **Local infrastructure**: Docker Compose for Postgres and any other services
+
+  ## Web UI — five pages
+
+  1. **Project list** — integration projects with status, accuracy %, last-run time, assignee.
+  2. **Schema browser** — source + target schemas side-by-side with column profiles (null rate, sample values, types, cardinality).
+  3. **Mapping review queue** — all mappings for the active project, sorted ascending by confidence; inline approve/reject/edit.
+  4. **Mapping editor** (critical page) — single mapping deep view: source fields, target field, editable SQL with syntax highlighting, sample rows rendered before/after transformation, live test results, pattern type, rationale, confidence. Rerun tests on demand.
+  5. **Eval dashboard** — accuracy trends over time broken down by pattern type, with a failing-mappings table.
+
+  ## Quality requirements
+
+  - **All nine transformation patterns must be production-grade** — each with its own generator, pattern-specific test strategy, and full eval coverage. Nothing stubbed.
+  - **Calibrated confidence** — confidence scores reflect measured pass rates from sandbox validation on sample rows, not the model's self-assessed certainty.
+  - **Structured outputs everywhere** — no free-text mapping proposals at any stage.
+  - **Idempotency** — same input produces same output (seeded LLM calls, cached embeddings).
+  - **Auditability** — every mapping decision has structured rationale, retrieved context, and is version-controlled as a git artifact.
+  - **Observability** — every agent decision logged as a structured trace; token usage and USD cost tracked per mapping.
+  - **Reversibility** — no mapping reaches production without human approval via PR.
+  - **Retry with hints** — validator failures feed structured error hints back to the generator, not blind regeneration.
+
+  ## Benchmark and evaluation
+
+  **Primary benchmark: AdventureWorks OLTP → AdventureWorksDW.** Both are free Microsoft sample databases restored to a local SQL Server 2025 Developer Edition instance. Microsoft has publicly documented the correct mapping. The agent runs cold on the OLTP→DW pair without access to
+   Microsoft's solution; output is graded on match rate. All nine transformation patterns are represented in this benchmark.
+
+  **Secondary coverage**: smaller public mapping pairs (Northwind → star schema; mini Stripe → unified customer model) to ensure per-pattern accuracy.
+
+  **Eval harness**: a golden set of 15–20 source-target mapping pairs with known correct outputs. The harness runs the full agent pipeline, scores overall and per-pattern accuracy, persists results to a `runs` table, and generates regression reports across runs to catch accuracy
+  drops from prompt or model changes.
+
+  ## Environment
+
+  Development on Windows 11 with a local Microsoft SQL Server 2025 Developer Edition instance (instance name `SQLDEV2025`) and SQL Server Management Studio 22 installed. Postgres, DuckDB, and any other supporting services run locally via Docker Compose.

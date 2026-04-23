@@ -1,0 +1,42 @@
+# Secrets
+.env
+*.env.local
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Data / benchmarks
+*.parquet
+benchmarks/*/samples/
+benchmarks/*/out/
+*.duckdb
+*.duckdb.wal
+
+# dbt
+dbt_target/
+target/
+logs/
+
+# Node / Next.js (M4+)
+node_modules/
+.next/
+out/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Claude
+.claude/settings.local.json

@@ -1,0 +1,56 @@
+[project]
+name = "integration-agent"
+version = "0.1.0"
+description = "Multi-agent AI system for automated schema mapping and data integration (OLTP -> DW)"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "Mohammad Falshaer" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.7",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = []
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "agents",
+    "schemas",
+    "generators",
+    "validator",
+    "dbt_emit",
+    "evals",
+    "observability",
+    "sqlserver",
+    "worker",
+    "api",
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["packages", "apps"]
