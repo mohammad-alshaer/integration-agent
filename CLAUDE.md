@@ -2,7 +2,7 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** M1 W4-B complete (15 commits on `main`, 79 tests passing). W4-C next. The full pipeline — graph → retry-with-error-hints → dbt emission → `dbt build` with passing tests — is verified end-to-end offline via `scripts/smoke_graph.py`.
+**Current milestone:** M1 W4-C complete (16 commits on `main`, 100 tests passing). W4-D next. The full pipeline — graph → retry-with-error-hints → dbt emission → `dbt build` with passing tests, plus the golden-set scorer — is verified end-to-end offline via `scripts/smoke_graph.py` and the evals tests.
 
 **Canonical plan:** `C:\Users\mfalshaer\.claude\plans\i-want-to-do-jiggly-yeti.md` — read this before any non-trivial work. Always edit the plan incrementally when scope shifts; don't drift silently.
 
@@ -51,7 +51,7 @@ Mohammad's Dar-managed Windows 11 PC has hard policies. Ignoring them will cost 
 
 ---
 
-## Repo layout (end of W4-B)
+## Repo layout (end of W4-C)
 
 ```
 Integration-Agent/
@@ -86,13 +86,13 @@ Integration-Agent/
 │   ├── generators/                  PatternGenerator Protocol + Rename/Concat/Derived. GenerationContext carries optional error_hints for DerivedGenerator retries.
 │   ├── validator/                   Sandbox (DuckDB in-memory OR persistent) + error_hints normalizer + ValidationRunner. Fills MappingSpec.validation_pass_rate.
 │   ├── dbt_emit/                    project.py + profiles.py + model.py + schema_yml.py + emitter.py. Emits a dbt-duckdb project from a MappingSpec list.
-│   ├── evals/                       [W4-C — NOT YET] golden set loader + scorer + runner
+│   ├── evals/                       models.py + golden.py (YAML loader) + scorer.py (3 match levels, per-pattern, disputed filter) + runner.py + cli.py. Produces eval_report.json.
 │   └── (M3+: add api/, etc.)
 │
 ├── benchmarks/
 │   └── adventureworks/
 │       ├── samples/                 gitignored; Parquet samples from FK-closure sampler
-│       ├── expected_mappings.yaml   [W4-C — NOT YET] hand-authored ground truth for DimCustomer, DimProduct, FactInternetSales
+│       ├── expected_mappings.yaml   hand-authored ground truth for DimCustomer, DimProduct, FactInternetSales (~40 entries, ~1/4 disputed)
 │       └── out/                     gitignored; dbt project + eval report
 │
 ├── docs/adr/                        0001-langgraph, 0002-duckdb-unified-store,
@@ -108,8 +108,7 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ./.venv/Scripts/python.exe -m pip install -e . \
   -e packages/schemas -e packages/sqlserver -e packages/agents \
   -e packages/generators -e packages/validator -e packages/dbt_emit \
-  -e apps/worker
-# (add -e packages/evals after W4-C)
+  -e packages/evals -e apps/worker
 ```
 
 ---
@@ -122,7 +121,7 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 # Lint + format + tests (run manually — pre-commit is dropped on this machine)
 ./.venv/Scripts/python.exe -m ruff check .
 ./.venv/Scripts/python.exe -m ruff format .
-./.venv/Scripts/python.exe -m pytest packages/ -v    # 79 tests at end of W4-B
+./.venv/Scripts/python.exe -m pytest packages/ -v    # 100 tests at end of W4-C
 
 # Smoke tests (all green; smoke_graph.py in particular is the offline DoD)
 ./.venv/Scripts/python.exe scripts/check_sqlserver.py
@@ -152,7 +151,7 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
   --profiles-dir benchmarks/adventureworks/out/dbt \
   --target dev
 
-# [W4-C] Eval harness — produces the first-accuracy-number JSON report
+# Eval harness — produces the accuracy-number JSON report (quota-gated for real LLM; use --provider fake offline)
 ./.venv/Scripts/python.exe -m evals run \
   --pair adventureworks --provider gemini --model gemini-2.5-flash
 ```
@@ -205,6 +204,7 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
+9f447bb  M1 W4-C: evals package + golden set + scorer + runner              (100 tests)
 43b4360  M1 W4-B: dbt_emit package + dbt-duckdb build verification          (79 tests)
 93379ff  M1 W4-A: DuckDB sandbox validator + retry-with-error-hints loop    (70 tests)
 bb09763  Refresh CLAUDE.md for end-of-W3 state
@@ -230,29 +230,7 @@ Tags: `m0-complete` on `afb7c6d`.
 
 ## What's left — pick up here in the new context window
 
-### W4-C: evals package + hand-authored golden set  ⏭️ DO THIS NEXT
-
-**Deliverables:**
-- `benchmarks/adventureworks/expected_mappings.yaml` — hand-authored ground truth for 3 M1 target tables (DimCustomer, DimProduct, FactInternetSales). Source: MS published AW→AWDW mapping + reading the `AdventureWorksDW_*.dtsx` SSIS packages where docs are ambiguous. ~30–40 entries. Schema per entry:
-  ```yaml
-  target_fqn: dbo.DimCustomer.FirstName
-  expected_pattern: rename
-  expected_source_fqns: [Person.Person.FirstName]
-  disputed: false       # true when MS docs are unclear; scorer reports with/without
-  ```
-- `packages/evals/src/evals/golden.py` — loads YAML → `dict[target_fqn, ExpectedMapping]`.
-- `packages/evals/src/evals/scorer.py` — three match levels per target:
-  1. `exact_match` (pattern + sources identical)
-  2. `pattern_match` (pattern matches, sources differ)
-  3. `sql_semantic_match` (via normalized SQL comparison — strip whitespace, uppercase keywords, sort commutative arg order)
-  - Per-pattern breakdown, inclusive + exclusive of `disputed: true`.
-- `packages/evals/src/evals/runner.py` — loads profiles, builds graph, runs, scores vs golden, writes JSON to `benchmarks/<pair>/out/eval_report.json`.
-- CLI entry: `./.venv/Scripts/python.exe -m evals run --pair adventureworks --provider gemini --model gemini-2.5-flash`.
-- Tests: scorer on canned (expected, actual) pairs; golden loader round-trips.
-
-**Offline verification (no LLM quota):** wire `smoke_graph.py`'s 4-spec output through the scorer against a tiny hand-written `expected.yaml` fixture; confirm per-pattern counts and exact_match rate (should be 4/4).
-
-### W4-D: docs + tag
+### W4-D: docs + tag  ⏭️ DO THIS NEXT
 
 - Fix the dbt `accepted_values` deprecation: in `packages/dbt_emit/src/dbt_emit/schema_yml.py`, wrap test configs under `arguments:` instead of top-level. Small change; kills the current `MissingArgumentsPropertyInGenericTestDeprecation` warning.
 - Refresh CLAUDE.md one more time with W4-C landed (this file's "What's left" shrinks).

@@ -1,0 +1,225 @@
+pair: adventureworks
+source_database: AdventureWorks2022
+target_database: AdventureWorksDW2022
+
+# Hand-authored ground-truth mapping from AdventureWorks OLTP to AdventureWorksDW.
+# Scope: M1 target tables (DimCustomer, DimProduct, FactInternetSales) x M1 patterns
+# (rename, concat, derived). Entries where MS docs are ambiguous — XML Demographics
+# shredding, cross-table lookups, SCD2 rows, surrogate-key vs business-key choices —
+# are flagged `disputed: true` so the scorer reports inclusive + exclusive metrics.
+#
+# See docs/adr and packages/evals/src/evals/scorer.py for match-level definitions.
+
+mappings:
+  # ---------- dbo.DimCustomer ----------
+  - target_fqn: dbo.DimCustomer.CustomerKey
+    expected_pattern: rename
+    expected_source_fqns: [Sales.Customer.CustomerID]
+    disputed: false
+    note: "Business-key passthrough; AWDW reuses OLTP CustomerID as its surrogate."
+
+  - target_fqn: dbo.DimCustomer.CustomerAlternateKey
+    expected_pattern: rename
+    expected_source_fqns: [Sales.Customer.AccountNumber]
+    disputed: false
+
+  - target_fqn: dbo.DimCustomer.Title
+    expected_pattern: rename
+    expected_source_fqns: [Person.Person.Title]
+    disputed: false
+
+  - target_fqn: dbo.DimCustomer.FirstName
+    expected_pattern: rename
+    expected_source_fqns: [Person.Person.FirstName]
+    disputed: false
+
+  - target_fqn: dbo.DimCustomer.MiddleName
+    expected_pattern: rename
+    expected_source_fqns: [Person.Person.MiddleName]
+    disputed: false
+
+  - target_fqn: dbo.DimCustomer.LastName
+    expected_pattern: rename
+    expected_source_fqns: [Person.Person.LastName]
+    disputed: false
+
+  - target_fqn: dbo.DimCustomer.Suffix
+    expected_pattern: rename
+    expected_source_fqns: [Person.Person.Suffix]
+    disputed: false
+
+  - target_fqn: dbo.DimCustomer.NameStyle
+    expected_pattern: rename
+    expected_source_fqns: [Person.Person.NameStyle]
+    disputed: false
+
+  - target_fqn: dbo.DimCustomer.EmailAddress
+    expected_pattern: derived
+    expected_source_fqns: [Person.EmailAddress.EmailAddress]
+    disputed: true
+    note: "Source lives in a separate table; model must join Person -> EmailAddress. Reports MISSING if source profile lacks Person.EmailAddress."
+
+  - target_fqn: dbo.DimCustomer.BirthDate
+    expected_pattern: derived
+    expected_source_fqns: [Person.Person.Demographics]
+    disputed: true
+    note: "XML shredding from Demographics; LLM may legitimately classify as UNSUPPORTED_IN_M1."
+
+  - target_fqn: dbo.DimCustomer.YearlyIncome
+    expected_pattern: derived
+    expected_source_fqns: [Person.Person.Demographics]
+    disputed: true
+    note: "XML shredding; see BirthDate."
+
+  - target_fqn: dbo.DimCustomer.DateFirstPurchase
+    expected_pattern: derived
+    expected_source_fqns: [Sales.SalesOrderHeader.OrderDate, Sales.SalesOrderHeader.CustomerID]
+    disputed: true
+    note: "MIN(OrderDate) grouped by CustomerID — aggregation; M1 may classify UNSUPPORTED_IN_M1."
+
+  # ---------- dbo.DimProduct ----------
+  - target_fqn: dbo.DimProduct.ProductAlternateKey
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.ProductNumber]
+    disputed: false
+
+  - target_fqn: dbo.DimProduct.EnglishProductName
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.Name]
+    disputed: false
+
+  - target_fqn: dbo.DimProduct.Color
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.Color]
+    disputed: false
+
+  - target_fqn: dbo.DimProduct.SafetyStockLevel
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.SafetyStockLevel]
+    disputed: false
+
+  - target_fqn: dbo.DimProduct.ReorderPoint
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.ReorderPoint]
+    disputed: false
+
+  - target_fqn: dbo.DimProduct.ListPrice
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.ListPrice]
+    disputed: false
+
+  - target_fqn: dbo.DimProduct.Size
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.Size]
+    disputed: false
+
+  - target_fqn: dbo.DimProduct.SizeRange
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.SizeUnitMeasureCode]
+    disputed: true
+    note: "Column semantics differ between OLTP SizeUnitMeasureCode (FK code) and DW SizeRange (freeform)."
+
+  - target_fqn: dbo.DimProduct.Weight
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.Weight]
+    disputed: false
+
+  - target_fqn: dbo.DimProduct.DaysToManufacture
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.DaysToManufacture]
+    disputed: false
+
+  - target_fqn: dbo.DimProduct.ProductLine
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.ProductLine]
+    disputed: false
+
+  - target_fqn: dbo.DimProduct.Class
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.Class]
+    disputed: false
+
+  - target_fqn: dbo.DimProduct.Style
+    expected_pattern: rename
+    expected_source_fqns: [Production.Product.Style]
+    disputed: false
+
+  # ---------- dbo.FactInternetSales ----------
+  - target_fqn: dbo.FactInternetSales.SalesOrderNumber
+    expected_pattern: rename
+    expected_source_fqns: [Sales.SalesOrderHeader.SalesOrderNumber]
+    disputed: false
+
+  - target_fqn: dbo.FactInternetSales.RevisionNumber
+    expected_pattern: rename
+    expected_source_fqns: [Sales.SalesOrderHeader.RevisionNumber]
+    disputed: false
+
+  - target_fqn: dbo.FactInternetSales.OrderQuantity
+    expected_pattern: rename
+    expected_source_fqns: [Sales.SalesOrderDetail.OrderQty]
+    disputed: false
+
+  - target_fqn: dbo.FactInternetSales.UnitPrice
+    expected_pattern: rename
+    expected_source_fqns: [Sales.SalesOrderDetail.UnitPrice]
+    disputed: false
+
+  - target_fqn: dbo.FactInternetSales.ExtendedAmount
+    expected_pattern: derived
+    expected_source_fqns: [Sales.SalesOrderDetail.UnitPrice, Sales.SalesOrderDetail.OrderQty]
+    disputed: false
+    note: "UnitPrice * OrderQty"
+
+  - target_fqn: dbo.FactInternetSales.UnitPriceDiscountPct
+    expected_pattern: rename
+    expected_source_fqns: [Sales.SalesOrderDetail.UnitPriceDiscount]
+    disputed: false
+
+  - target_fqn: dbo.FactInternetSales.DiscountAmount
+    expected_pattern: derived
+    expected_source_fqns:
+      - Sales.SalesOrderDetail.UnitPrice
+      - Sales.SalesOrderDetail.UnitPriceDiscount
+      - Sales.SalesOrderDetail.OrderQty
+    disputed: false
+    note: "UnitPrice * UnitPriceDiscount * OrderQty"
+
+  - target_fqn: dbo.FactInternetSales.SalesAmount
+    expected_pattern: rename
+    expected_source_fqns: [Sales.SalesOrderDetail.LineTotal]
+    disputed: true
+    note: "LineTotal is a persisted computed column in OLTP; could classify as DERIVED if LLM sees the formula instead of the column."
+
+  - target_fqn: dbo.FactInternetSales.TaxAmt
+    expected_pattern: derived
+    expected_source_fqns:
+      - Sales.SalesOrderHeader.TaxAmt
+      - Sales.SalesOrderHeader.SubTotal
+      - Sales.SalesOrderDetail.LineTotal
+    disputed: true
+    note: "AWDW pro-rates header TaxAmt per-line; multi-table allocation math."
+
+  - target_fqn: dbo.FactInternetSales.Freight
+    expected_pattern: derived
+    expected_source_fqns:
+      - Sales.SalesOrderHeader.Freight
+      - Sales.SalesOrderHeader.SubTotal
+      - Sales.SalesOrderDetail.LineTotal
+    disputed: true
+    note: "Same pro-rate pattern as TaxAmt."
+
+  - target_fqn: dbo.FactInternetSales.OrderDate
+    expected_pattern: rename
+    expected_source_fqns: [Sales.SalesOrderHeader.OrderDate]
+    disputed: false
+
+  - target_fqn: dbo.FactInternetSales.DueDate
+    expected_pattern: rename
+    expected_source_fqns: [Sales.SalesOrderHeader.DueDate]
+    disputed: false
+
+  - target_fqn: dbo.FactInternetSales.ShipDate
+    expected_pattern: rename
+    expected_source_fqns: [Sales.SalesOrderHeader.ShipDate]
+    disputed: false
