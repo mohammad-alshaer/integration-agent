@@ -11,15 +11,23 @@ Run:  ./.venv/Scripts/python.exe scripts/hello_gemini.py
 
 from __future__ import annotations
 
-import contextlib
-import os
-import sys
+# Corporate TLS proxy: Dar inserts its own CA for HTTPS inspection. Python's
+# default cert bundle (certifi) doesn't trust it; the Windows cert store does.
+# truststore routes ssl/urllib3/httpx/requests through the Windows store.
+# MUST run before any HTTPS client is constructed.
+import truststore
 
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-from langfuse import get_client, observe
-from pydantic import BaseModel, Field
+truststore.inject_into_ssl()
+
+import contextlib  # noqa: E402
+import os  # noqa: E402
+import sys  # noqa: E402
+
+from dotenv import load_dotenv  # noqa: E402
+from google import genai  # noqa: E402
+from google.genai import types  # noqa: E402
+from langfuse import get_client, observe  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
 
 load_dotenv()
 
@@ -52,23 +60,10 @@ def greet_in_french() -> Greeting:
         ),
     )
     result: Greeting = response.parsed
-
-    # Enrich the active Langfuse span (best-effort — v4 OTel-based API)
-    try:
-        lf = get_client()
-        usage = response.usage_metadata
-        lf.update_current_trace(
-            input={"prompt": prompt},
-            output=result.model_dump(),
-            metadata={
-                "model": model,
-                "tokens_in": getattr(usage, "prompt_token_count", 0),
-                "tokens_out": getattr(usage, "candidates_token_count", 0),
-            },
-        )
-    except Exception as exc:  # noqa: BLE001
-        print(f"[hello_gemini] langfuse enrichment failed (non-fatal): {exc}", file=sys.stderr)
-
+    # @observe auto-captures function args + return value + timing into the trace.
+    # In Langfuse v4 OTel-based, explicit enrichment uses a different API than v3;
+    # for the M0 smoke test the auto-capture is sufficient. We'll add richer
+    # generation-level metadata in packages/agents/src/agents/llm.py at M1.
     return result
 
 
