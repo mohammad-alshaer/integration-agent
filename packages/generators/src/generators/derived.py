@@ -143,6 +143,22 @@ class DerivedGenerator:
                 piece += f"  top_values=[{samples}]"
             lines.append(piece)
 
+        # On retry, include the validator's structured feedback so the LLM can correct.
+        if ctx.error_hints:
+            lines.append("")
+            lines.append("PREVIOUS ATTEMPT FAILED VALIDATION. Correct the specific issues below:")
+            for h in ctx.error_hints:
+                lines.append(f"  - kind={h.kind.value}: {h.duckdb_error_message}")
+                if h.suggestion:
+                    lines.append(f"    suggestion: {h.suggestion}")
+                if h.offending_sql_snippet:
+                    lines.append(f"    offending sql was: {h.offending_sql_snippet}")
+            lines.append("")
+            lines.append(
+                "Emit a NEW sql_expression that addresses every failure above. "
+                "Do not repeat the failed expression."
+            )
+
         lines.append("")
         lines.append("Return JSON matching the DerivedSpec schema.")
         return "\n".join(lines)

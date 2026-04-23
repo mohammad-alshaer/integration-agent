@@ -1,24 +1,36 @@
-"""Graph-wiring smoke test — exercises the full Week 3 pipeline with a FakeLLM.
+"""Graph-wiring smoke test — exercises the full M1 pipeline with a FakeLLM.
 
 Why this exists: the real e2e via `worker run` is gated by Gemini free tier's
 20-requests-per-day cap on gemini-2.5-flash; that quota is easy to burn in a
 single run with retries. This script uses a scripted FakeLLM + the real
-embeddings cache + the real LangGraph to prove the pipeline's internal
-plumbing works end-to-end. It emits at least one `MappingSpec` per pattern.
+embeddings cache (ConstantEmbedder, no network) + the real LangGraph + the
+real W4 DuckDB validator + a tiny Parquet sandbox, and exercises:
+
+  - Happy-path specs for all 3 M1 patterns (rename x2, concat, derived)
+  - The validator-triggered retry loop: the FIRST derived response emits
+    broken SQL (references a nonexistent column). The validator catches
+    it, populates ErrorHint(UNKNOWN_COLUMN). The graph routes back to
+    transformation_generator. DerivedGenerator sees error_hints in its
+    GenerationContext and the prompt grows a "PREVIOUS ATTEMPT FAILED"
+    section. FakeLLM, seeing that marker, returns a corrected CASE. The
+    final MappingSpec validates at pass_rate=1.0.
 
 Run: ./.venv/Scripts/python.exe scripts/smoke_graph.py
 """
 
 from __future__ import annotations
 
-# Corporate TLS proxy (needed by VoyageEmbedder / GeminiEmbedder if they were used).
+# Corporate TLS proxy (harmless if nothing hits HTTPS, which nothing here does).
 import truststore
 
 truststore.inject_into_ssl()
 
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
 
+import pandas as pd  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
 from agents.graph import build_graph  # noqa: E402
@@ -33,6 +45,7 @@ from schemas import (  # noqa: E402
     SemanticType,
     TableProfile,
 )
+from validator import Sandbox  # noqa: E402
 
 load_dotenv()
 
@@ -41,13 +54,18 @@ load_dotenv()
 
 
 class FakeLLM:
-    """Dispatches by schema type. Mirrors the LLMClient Protocol."""
+    """Dispatches by schema type. Mirrors the LLMClient Protocol.
+
+    The retry-aware piece is in `_derived`: the first call for a given target
+    returns broken SQL, and the second call (which the graph only makes if
+    the validator said the first failed) returns correct SQL.
+    """
 
     provider = "fake"
     model = "fake-1"
 
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []  # (schema_name, target_fqn-ish)
+        self.calls: list[tuple[str, str]] = []
 
     def structured(self, system: str, user: str, schema: type) -> Any:
         self.calls.append((schema.__name__, user[:60]))
@@ -60,7 +78,6 @@ class FakeLLM:
         raise RuntimeError(f"FakeLLM: unsupported schema {schema.__name__}")
 
     def _matcher(self, user: str) -> MatcherOutput:
-        # Pick 1-3 relevant candidates per target based on keyword hints in the prompt
         picks = []
         if "FirstName" in user:
             picks.append(_rc("Person.Person.FirstName", "direct name match", 0.95))
@@ -123,16 +140,29 @@ class FakeLLM:
         )
 
     def _derived(self, user: str) -> DerivedSpec:
+        is_retry = "PREVIOUS ATTEMPT FAILED" in user
         if "EmailPromotionCategory" in user:
+            if is_retry:
+                return DerivedSpec(
+                    sql_expression=(
+                        "CASE WHEN EmailPromotion = 0 THEN 'None' "
+                        "WHEN EmailPromotion = 1 THEN 'AdventureWorks Only' "
+                        "WHEN EmailPromotion = 2 THEN 'AdventureWorks and Partners' END"
+                    ),
+                    rationale="Corrected after validator caught UNKNOWN_COLUMN on first try",
+                    accepted_values=[
+                        "None",
+                        "AdventureWorks Only",
+                        "AdventureWorks and Partners",
+                    ],
+                    confidence=0.95,
+                )
+            # Initial attempt: references a column that isn't in the source.
             return DerivedSpec(
-                sql_expression=(
-                    "CASE WHEN EmailPromotion = 0 THEN 'None' "
-                    "WHEN EmailPromotion = 1 THEN 'AdventureWorks Only' "
-                    "WHEN EmailPromotion = 2 THEN 'AdventureWorks and Partners' END"
-                ),
-                rationale="CASE-based enum decode",
-                accepted_values=["None", "AdventureWorks Only", "AdventureWorks and Partners"],
-                confidence=0.9,
+                sql_expression="CASE WHEN nonexistent_col = 0 THEN 'None' ELSE 'Other' END",
+                rationale="first guess; will fail validation",
+                accepted_values=None,
+                confidence=0.35,
             )
         return DerivedSpec(
             sql_expression="CAST(src AS VARCHAR)",
@@ -317,12 +347,8 @@ def build_target_profile() -> SchemaProfile:
 
 
 class ConstantEmbedder:
-    """Produces deterministic, orthogonal-ish embeddings from column text hash.
-
-    We don't care about quality here — the FakeLLM picks candidates by prompt
-    substring matching, not by retrieval rank. We just need something the
-    vector store can index and query.
-    """
+    """Deterministic hash-based embeddings. Quality doesn't matter here —
+    FakeLLM picks candidates by prompt substring match, not retrieval rank."""
 
     provider = "fake"
     model = "fake-emb-1"
@@ -339,6 +365,33 @@ class ConstantEmbedder:
         return out
 
 
+# ----------------- Sandbox sample fixtures (tiny Parquet) -----------------
+
+
+def write_sample_parquets(out_dir: Path) -> None:
+    """Create just enough rows so the validator's pass/fail math is deterministic."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Person.Person — 3 rows, one with NULL MiddleName (the concat must NULL-safe)
+    pd.DataFrame(
+        {
+            "BusinessEntityID": [1, 2, 3],
+            "FirstName": ["Ada", "Grace", "Alan"],
+            "MiddleName": ["A.", None, "M."],
+            "LastName": ["Lovelace", "Hopper", "Turing"],
+            "EmailPromotion": [0, 1, 2],
+        }
+    ).to_parquet(out_dir / "Person.Person.parquet", index=False)
+
+    # Sales.Customer — 2 rows
+    pd.DataFrame(
+        {
+            "CustomerID": [101, 102],
+            "PersonID": [1, 2],
+        }
+    ).to_parquet(out_dir / "Sales.Customer.parquet", index=False)
+
+
 # --------------------------------- Main -----------------------------------
 
 
@@ -346,25 +399,34 @@ def main() -> int:
     source = build_source_profile()
     target = build_target_profile()
 
-    embedder = ConstantEmbedder()
-    db_path = Path(".duckdb/smoke_graph.duckdb")
-    if db_path.exists():
-        db_path.unlink()
-    store = SourceVectorStore(db_path, embedder)
-    store.add_columns(source)
+    # Stand up a tiny Parquet sample directory for the validator
+    sample_dir = Path(tempfile.mkdtemp(prefix="smoke_graph_samples_"))
+    try:
+        write_sample_parquets(sample_dir)
 
-    llm = FakeLLM()
-    graph = build_graph(embedder, llm, store)
+        embedder = ConstantEmbedder()
+        db_path = Path(".duckdb/smoke_graph.duckdb")
+        if db_path.exists():
+            db_path.unlink()
+        store = SourceVectorStore(db_path, embedder)
+        store.add_columns(source)
 
-    target_fqns = [c.fqn for t in target.tables for c in t.columns]
-    initial: dict = {
-        "source_profile": source,
-        "target_profile": target,
-        "target_fqns": target_fqns,
-    }
-    final = graph.invoke(initial)
+        sandbox = Sandbox(sample_dir)
+        llm = FakeLLM()
+        graph = build_graph(embedder, llm, store, sandbox=sandbox, max_retries=1)
+
+        target_fqns = [c.fqn for t in target.tables for c in t.columns]
+        initial: dict = {
+            "source_profile": source,
+            "target_profile": target,
+            "target_fqns": target_fqns,
+        }
+        final = graph.invoke(initial)
+    finally:
+        shutil.rmtree(sample_dir, ignore_errors=True)
 
     specs = final.get("specs", [])
+    reports = final.get("validation_reports", {})
     classifications = final.get("classifications", {})
 
     print(f"=== FakeLLM calls: {len(llm.calls)} ===")
@@ -372,27 +434,44 @@ def main() -> int:
     for pc in classifications.values():
         pattern_counts[pc.pattern.value] = pattern_counts.get(pc.pattern.value, 0) + 1
     print(f"Classifications by pattern: {pattern_counts}")
+
     print(f"\n=== {len(specs)} MappingSpec(s) ===\n")
     for s in specs:
-        print(f"-- {s.target_fqn}  ({s.pattern.value})")
+        rep = reports.get(s.target_fqn)
+        pass_rate = f"{rep.pass_rate:.2f}" if rep else "?"
+        print(f"-- {s.target_fqn}  ({s.pattern.value})  validation_pass_rate={pass_rate}")
         print(f"   sources: {s.source_fqns}")
         print(f"   sql: {s.sql}")
         print(f"   tests: {[t.name for t in s.tests]}")
         print(f"   llm_conf: {s.llm_confidence:.2f}")
         print()
 
+    sandbox.close()
     store.close()
 
+    # Assertions
     if not specs:
         print("FAIL: expected at least one MappingSpec")
         return 1
     patterns = {s.pattern for s in specs}
-    expected = {Pattern.RENAME, Pattern.CONCAT, Pattern.DERIVED}
-    missing = expected - patterns
-    if missing:
-        print(f"FAIL: missing patterns {missing}")
+    missing_patterns = {Pattern.RENAME, Pattern.CONCAT, Pattern.DERIVED} - patterns
+    if missing_patterns:
+        print(f"FAIL: missing patterns {missing_patterns}")
         return 1
-    print("smoke_graph: all 3 M1 patterns represented -> OK")
+    # Retry expectation: the derived spec should have passed validation on the retry.
+    derived = next(s for s in specs if s.pattern == Pattern.DERIVED)
+    if derived.validation_pass_rate is None or derived.validation_pass_rate < 1.0:
+        print(
+            f"FAIL: DERIVED spec did not reach pass_rate=1.0 after retry "
+            f"(got {derived.validation_pass_rate})"
+        )
+        return 1
+    derived_calls = [c for c in llm.calls if c[0] == "DerivedSpec"]
+    if len(derived_calls) < 2:
+        print(f"FAIL: expected >=2 DerivedSpec calls (initial + retry), got {len(derived_calls)}")
+        return 1
+
+    print("smoke_graph: all 3 M1 patterns represented, retry-with-error-hints path verified -> OK")
     return 0
 
 

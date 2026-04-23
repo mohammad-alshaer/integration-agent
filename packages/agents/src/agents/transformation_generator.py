@@ -15,7 +15,14 @@ import logging
 
 from agents.llm import LLMClient
 from generators import ConcatGenerator, DerivedGenerator, GenerationContext, RenameGenerator
-from schemas import ColumnProfile, MappingProposal, MappingSpec, Pattern, PatternClassification
+from schemas import (
+    ColumnProfile,
+    ErrorHint,
+    MappingProposal,
+    MappingSpec,
+    Pattern,
+    PatternClassification,
+)
 
 log = logging.getLogger(__name__)
 
@@ -27,8 +34,15 @@ def generate_mappings(
     target_columns: dict[str, ColumnProfile],
     source_columns: dict[str, ColumnProfile],
     llm: LLMClient,
+    *,
+    error_hints_by_target: dict[str, list[ErrorHint]] | None = None,
 ) -> list[MappingSpec]:
-    """Produce MappingSpec list for every M1-supported classification."""
+    """Produce MappingSpec list for every M1-supported classification.
+
+    error_hints_by_target: on retry, pass the previous validation run's errors
+    per target. DerivedGenerator includes them in its prompt; deterministic
+    generators (rename, concat) ignore them.
+    """
     generators = {
         Pattern.RENAME: RenameGenerator(),
         Pattern.CONCAT: ConcatGenerator(),
@@ -68,7 +82,8 @@ def generate_mappings(
             pattern=classification.pattern,
             rationale=classification.rationale,
         )
-        ctx = GenerationContext(target=target, sources=sources)
+        hints = (error_hints_by_target or {}).get(target_fqn, [])
+        ctx = GenerationContext(target=target, sources=sources, error_hints=hints)
         gen = generators[classification.pattern]
 
         try:

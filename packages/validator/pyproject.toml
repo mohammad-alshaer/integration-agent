@@ -1,0 +1,17 @@
+[project]
+name = "integration-agent-validator"
+version = "0.1.0"
+description = "DuckDB sandbox + validation runner + error-hint normalizer for Integration-Agent"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "integration-agent-schemas",
+    "duckdb>=1.1",
+    "pyarrow>=18.0",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

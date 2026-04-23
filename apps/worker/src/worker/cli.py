@@ -25,6 +25,7 @@ from agents.schema_explorer import enrich_schema  # noqa: E402
 from agents.vector_store import SourceVectorStore  # noqa: E402
 from schemas import SchemaProfile  # noqa: E402
 from sqlserver import connect, introspect_schema, profile_tables, sample_to_parquet  # noqa: E402
+from validator import Sandbox  # noqa: E402
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -144,8 +145,16 @@ def run(
     out: Path | None = typer.Option(
         None, help="Optional: write the MappingSpec list to this JSON file."
     ),
+    sample_dir: Path | None = typer.Option(
+        None,
+        help=(
+            "Parquet sample directory for the W4 validator (e.g. benchmarks/adventureworks/samples). "
+            "If set, the graph validates specs in a DuckDB sandbox and retries DERIVED failures with error hints."
+        ),
+    ),
+    max_retries: int = typer.Option(1, help="Max validator-triggered retries on DERIVED failures."),
 ) -> None:
-    """Run the W3 mapping graph: semantic_matcher -> pattern_classifier -> transformation_generator."""
+    """Run the M1 mapping graph: semantic_matcher -> pattern_classifier -> transformation_generator -> validator (-> retry on DERIVED failures)."""
     source = SchemaProfile.model_validate_json(source_profile.read_text(encoding="utf-8"))
     target = SchemaProfile.model_validate_json(target_profile.read_text(encoding="utf-8"))
     typer.echo(f"Loaded source: {source.database_name} ({len(source.tables)} tables)")
@@ -184,7 +193,18 @@ def run(
     store.add_columns(source)
 
     llm = GeminiProvider()
-    graph = build_graph(embedder, llm, store, k_candidates=k, rate_limit_delay_sec=rate_limit_delay)
+    sandbox = Sandbox(sample_dir) if sample_dir is not None else None
+    if sandbox is not None:
+        typer.echo(f"Sandbox: loaded Parquet samples from {sample_dir}")
+    graph = build_graph(
+        embedder,
+        llm,
+        store,
+        k_candidates=k,
+        rate_limit_delay_sec=rate_limit_delay,
+        sandbox=sandbox,
+        max_retries=max_retries,
+    )
 
     initial: dict = {
         "source_profile": source,
@@ -216,4 +236,6 @@ def run(
         typer.echo(f"Wrote {len(specs)} specs to {out}")
 
     store.close()
+    if sandbox is not None:
+        sandbox.close()
     typer.echo("Done.")

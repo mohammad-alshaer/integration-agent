@@ -6,7 +6,7 @@ from typing import ClassVar, Protocol
 
 from pydantic import BaseModel
 
-from schemas import ColumnProfile, DbtTest, MappingProposal, MappingSpec, Pattern
+from schemas import ColumnProfile, DbtTest, ErrorHint, MappingProposal, MappingSpec, Pattern
 
 
 class GenerationContext(BaseModel):
@@ -16,6 +16,11 @@ class GenerationContext(BaseModel):
 
     target: ColumnProfile
     sources: list[ColumnProfile]  # ordered to match proposal.source_fqns
+    # When non-empty, a previous attempt's validator feedback. Generators that emit
+    # LLM-authored SQL (derived, future split/conditional/lookup) include these hints
+    # in their retry prompt so the model can correct the specific failure. Deterministic
+    # generators (rename, concat) ignore error_hints.
+    error_hints: list[ErrorHint] = []
 
 
 class PatternGenerator(Protocol):

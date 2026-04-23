@@ -6,12 +6,14 @@ requires-python = ">=3.11,<3.13"
 dependencies = [
     "integration-agent-schemas",
     "integration-agent-generators",
+    "integration-agent-validator",
     "pydantic>=2.9",
     "diskcache>=5.6",
     "google-genai>=1.0",
     "python-dotenv>=1.0",
     "duckdb>=1.1",
     "voyageai>=0.3",
+    "langgraph>=0.2,<0.3",
 ]
 
 [build-system]
