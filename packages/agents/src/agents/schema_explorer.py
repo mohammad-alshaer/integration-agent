@@ -30,6 +30,14 @@ class ColumnEnrichment(BaseModel):
     inferred_semantic_type: SemanticType
     semantic_type_confidence: float = Field(ge=0.0, le=1.0, default=0.5)
     quality_flags: list[QualityFlag] = []
+    generated_description: str | None = Field(
+        default=None,
+        description=(
+            "1-2 sentence description generated when ms_description is null/empty. "
+            "Folded into ColumnProfile.ms_description so downstream embedders see it. "
+            "Return null if ms_description is already populated."
+        ),
+    )
 
 
 class TableEnrichment(BaseModel):
@@ -52,8 +60,14 @@ Also emit `quality_flags` — any that apply:
 - NO_DESCRIPTION if ms_description is null/empty
 - AMBIGUOUS_TYPE if the column name + type + samples don't clearly indicate one semantic type
 
+If `ms_description` is null/empty, ALSO generate `generated_description`: a concise 1-2 sentence \
+description of what business data the column holds, in the dimensional/fact context of its table \
+(e.g., for `dbo.FactInternetSales.SalesAmount` say "Total dollar amount of the sale per line item, \
+unit price times quantity less discounts" — describe the column's role, not just the SQL type). \
+If `ms_description` is already populated, return null for `generated_description`.
+
 Be literal about the data. Don't guess beyond what the column name, type, description, \
-and top sample values show."""
+table context, and top sample values show."""
 
 
 def _user_prompt_for_table(table: TableProfile) -> str:
@@ -169,4 +183,7 @@ def _enrich_one_table(table: TableProfile, llm: LLMClient) -> bool:
         col.inferred_semantic_type = e.inferred_semantic_type
         col.semantic_type_confidence = e.semantic_type_confidence
         col.quality_flags = e.quality_flags
+        # Only fill ms_description from LLM if the source DB didn't have one — never overwrite.
+        if e.generated_description and not col.ms_description:
+            col.ms_description = e.generated_description
     return not cache_hit

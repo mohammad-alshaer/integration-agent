@@ -156,7 +156,7 @@ def build_graph(
                 "graph/validator: skipped (%s)", "no sandbox" if sandbox is None else "no specs"
             )
             return {"validation_reports": {}}
-        reports = validate_specs(specs, sandbox)
+        reports = validate_specs(specs, sandbox, source_profile=state["source_profile"])
         n_passed = sum(1 for r in reports.values() if r.passed)
         log.info("graph/validator: %d/%d specs passed", n_passed, len(reports))
         return {"validation_reports": reports}

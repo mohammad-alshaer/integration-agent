@@ -36,13 +36,19 @@ def _snake(name: str) -> str:
 
 def source_table_for(spec: MappingSpec) -> tuple[str, str] | None:
     """Unique (schema, table) across spec.source_fqns, or None if multi-table."""
+    tables = source_tables_for(spec)
+    return next(iter(tables)) if len(tables) == 1 else None
+
+
+def source_tables_for(spec: MappingSpec) -> set[tuple[str, str]]:
+    """Return the set of (schema, table) referenced by spec.source_fqns. Empty if malformed."""
     tables: set[tuple[str, str]] = set()
     for fqn in spec.source_fqns:
         parts = fqn.split(".")
         if len(parts) < 2:
-            return None
+            return set()
         tables.add((parts[0], parts[1]))
-    return tables.pop() if len(tables) == 1 else None
+    return tables
 
 
 def target_table_for(spec: MappingSpec) -> tuple[str, str]:
@@ -52,13 +58,26 @@ def target_table_for(spec: MappingSpec) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
+def target_column_for(spec: MappingSpec) -> str:
+    """Bare target column name (last segment of target_fqn)."""
+    return spec.target_fqn.rsplit(".", 1)[-1]
+
+
 def model_name(target_schema: str, target_table: str, src_schema: str, src_table: str) -> str:
     return f"stg_{_snake(target_table)}_from_{_snake(src_schema)}_{_snake(src_table)}"
 
 
+def intermediate_model_name(target_table: str, target_column: str) -> str:
+    """e.g. ('FactInternetSales', 'TaxAmt') -> 'int_fact_internet_sales_tax_amt'."""
+    return f"int_{_snake(target_table)}_{_snake(target_column)}"
+
+
 __all__ = [
+    "intermediate_model_name",
     "model_name",
     "source_table_for",
+    "source_tables_for",
     "split_select_expr",
+    "target_column_for",
     "target_table_for",
 ]

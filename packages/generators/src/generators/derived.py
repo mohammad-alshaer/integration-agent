@@ -54,10 +54,15 @@ You author a single SQL expression that computes a TARGET column from one or mor
 
 Output rules:
   - `sql_expression` is ONLY the expression (no SELECT, no FROM, no aliases, no semicolons).
-  - Use BARE column names, not schema.table.column — the expression will be placed inside
-    a SELECT over a CTE that already references the sources by bare name.
-  - No joins. No window functions. No aggregates (GROUP BY / SUM / AVG / ...). Those belong
-    to other pattern generators.
+  - Single-source-table case: use BARE column names, not schema.table.column — the expression
+    will be placed inside a SELECT over a CTE that already references the source by bare name.
+  - Multi-source-table case (when SOURCES span 2+ tables): use TABLE.column prefixes (just the
+    table name, NOT schema.table.column). The validator and dbt model wrap your expression in
+    a SELECT with `FROM <view_a> AS <table_a> INNER JOIN <view_b> AS <table_b> ON ...`, where
+    the table aliases match the bare table names. So `SalesOrderHeader.TaxAmt * SalesOrderDetail.LineTotal`
+    is valid for sources `Sales.SalesOrderHeader.TaxAmt` and `Sales.SalesOrderDetail.LineTotal`.
+  - No JOIN syntax in the expression itself — joins are handled by the wrapping FROM clause.
+    No window functions. No aggregates (GROUP BY / SUM / AVG / ...). Those belong to other generators.
   - Prefer ANSI SQL over dialect-specific syntax.
   - Do NOT include explicit CAST unless the source and target types genuinely differ.
     A passthrough rename of a DECIMAL to a DECIMAL needs no cast.
@@ -150,8 +155,18 @@ class DerivedGenerator:
         if ctx.target.inferred_semantic_type.value != "unknown":
             lines.append(f"  Semantic type: {ctx.target.inferred_semantic_type.value}")
 
+        # Detect multi-source-table — requires TABLE.column syntax + JOIN HINT block
+        source_tables = {(s.table_schema, s.table_name) for s in ctx.sources}
+        multi_table = len(source_tables) > 1
+
         lines.append("")
-        lines.append("SOURCES (use BARE column names in the expression):")
+        if multi_table:
+            lines.append(
+                f"SOURCES SPAN {len(source_tables)} TABLES — use TABLE.column prefixes "
+                "(NOT bare names). Example: SalesOrderHeader.TaxAmt"
+            )
+        else:
+            lines.append("SOURCES (use BARE column names in the expression):")
         for s in ctx.sources:
             piece = f"  - {s.fqn}  type={s.sql_type}"
             if s.ms_description:
@@ -160,6 +175,24 @@ class DerivedGenerator:
                 samples = ", ".join(repr(v) for v, _ in s.top_values[:5])
                 piece += f"  top_values=[{samples}]"
             lines.append(piece)
+
+        if multi_table:
+            lines.append("")
+            lines.append(
+                "JOIN HINT: the validator wraps your expression in a SELECT over a JOIN of these "
+                "tables, aliased by bare table name (e.g. `Sales.SalesOrderHeader` becomes alias "
+                "`SalesOrderHeader`). Reference columns as `<TableName>.<column>` to disambiguate."
+            )
+            lines.append("")
+            lines.append(
+                "EXAMPLE — header-amount-allocated-per-detail-line pattern:\n"
+                "  TARGET: dbo.FactInternetSales.TaxAmt\n"
+                "  SOURCES: Sales.SalesOrderHeader.TaxAmt, Sales.SalesOrderHeader.SubTotal,\n"
+                "           Sales.SalesOrderDetail.LineTotal\n"
+                "  -> sql_expression: "
+                "SalesOrderHeader.TaxAmt * SalesOrderDetail.LineTotal / SalesOrderHeader.SubTotal\n"
+                "  (header tax pro-rated by line's share of the header subtotal)"
+            )
 
         # On retry, include the validator's structured feedback so the LLM can correct.
         if ctx.error_hints:

@@ -8,7 +8,14 @@ import pytest
 import yaml
 
 from dbt_emit import emit_dbt_project, write_models, write_project_yml, write_schema_yml
-from schemas import DbtTest, MappingSpec, Pattern
+from schemas import (
+    ColumnProfile,
+    DbtTest,
+    MappingSpec,
+    Pattern,
+    SchemaProfile,
+    TableProfile,
+)
 
 
 def _spec(
@@ -119,8 +126,8 @@ class TestWriteModels:
         assert "CustomerID AS CustomerKey" in sales_sql
         assert "{{ source('aw_oltp', 'Sales_Customer') }}" in sales_sql
 
-    def test_multi_source_specs_go_to_sidecar(self, tmp_path: Path) -> None:
-        # A spec that references two different source tables should not be modeled
+    def test_multi_source_without_profile_falls_to_sidecar(self, tmp_path: Path) -> None:
+        # No source_profile -> can't resolve FK -> sidecar
         multi = _spec(
             "dbo.DimX.Col",
             ["Person.Person.FirstName", "Sales.Customer.CustomerID"],
@@ -132,6 +139,85 @@ class TestWriteModels:
         assert sidecar in written
         txt = sidecar.read_text(encoding="utf-8")
         assert "dbo.DimX.Col" in txt
+
+    def test_multi_source_with_fk_emits_intermediate_model(self, tmp_path: Path) -> None:
+        # Two-table spec with a discoverable FK -> intermediate JOIN model
+        spec = _spec(
+            "dbo.FactInternetSales.TaxAmt",
+            [
+                "Sales.SalesOrderHeader.TaxAmt",
+                "Sales.SalesOrderHeader.SubTotal",
+                "Sales.SalesOrderDetail.LineTotal",
+            ],
+            "SELECT SalesOrderHeader.TaxAmt * SalesOrderDetail.LineTotal "
+            "/ SalesOrderHeader.SubTotal AS TaxAmt",
+            Pattern.DERIVED,
+            pass_rate=1.0,
+        )
+        profile = SchemaProfile(
+            database_name="AdventureWorks2022",
+            role="source",
+            tables=[
+                TableProfile(
+                    table_schema="Sales",
+                    table_name="SalesOrderHeader",
+                    row_count_estimate=0,
+                    columns=[
+                        ColumnProfile(
+                            table_schema="Sales",
+                            table_name="SalesOrderHeader",
+                            column_name="SalesOrderID",
+                            ordinal_position=1,
+                            sql_type="int",
+                            is_nullable=False,
+                            is_primary_key=True,
+                            is_foreign_key=False,
+                            null_rate=0.0,
+                            distinct_count=0,
+                            total_count=0,
+                        )
+                    ],
+                ),
+                TableProfile(
+                    table_schema="Sales",
+                    table_name="SalesOrderDetail",
+                    row_count_estimate=0,
+                    columns=[
+                        ColumnProfile(
+                            table_schema="Sales",
+                            table_name="SalesOrderDetail",
+                            column_name="SalesOrderID",
+                            ordinal_position=1,
+                            sql_type="int",
+                            is_nullable=False,
+                            is_primary_key=False,
+                            is_foreign_key=True,
+                            fk_ref="Sales.SalesOrderHeader.SalesOrderID",
+                            null_rate=0.0,
+                            distinct_count=0,
+                            total_count=0,
+                        )
+                    ],
+                ),
+            ],
+            profiled_at="2026-04-26T00:00:00+00:00",
+        )
+
+        written = write_models([spec], tmp_path, source_profile=profile)
+        intermediate = (
+            tmp_path / "models" / "intermediate" / "int_fact_internet_sales_tax_amt.sql"
+        )
+        assert intermediate in written
+        body = intermediate.read_text(encoding="utf-8")
+        assert "inner join" in body.lower()
+        assert "{{ source('aw_oltp', 'Sales_SalesOrderHeader') }}" in body
+        assert "{{ source('aw_oltp', 'Sales_SalesOrderDetail') }}" in body
+        assert "SalesOrderHeader.TaxAmt" in body
+        assert "SalesOrderDetail.LineTotal" in body
+        assert "on SalesOrderDetail.SalesOrderID = SalesOrderHeader.SalesOrderID" in body
+        # Sidecar should NOT be written since we successfully emitted the JOIN model
+        sidecar = tmp_path / "models" / "staging" / "_unmodeled_multi_source.txt"
+        assert not sidecar.exists()
 
 
 class TestSchemaYml:
