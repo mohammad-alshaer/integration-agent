@@ -24,64 +24,16 @@ Grouping rule:
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from pathlib import Path
 
+from dbt_emit._parsing import (
+    model_name,
+    source_table_for,
+    split_select_expr,
+    target_table_for,
+)
 from schemas import MappingSpec
-
-_SELECT_RE = re.compile(r"^\s*SELECT\s+(?P<body>.+?)\s*$", re.DOTALL | re.IGNORECASE)
-
-
-def _split_select_expr(spec_sql: str) -> tuple[str, str] | None:
-    """Parse `SELECT <expr> AS <alias>` into (expr, alias). Case-insensitive.
-
-    Returns None if the SQL doesn't match the expected shape.
-    """
-    m = _SELECT_RE.match(spec_sql.strip())
-    if not m:
-        return None
-    body = m.group("body").strip().rstrip(";")
-    # Split on the LAST ` AS ` (case-insensitive) at the top level — expressions
-    # may legitimately contain `AS VARCHAR` inside CAST(...)
-    # Simple heuristic: rightmost ` AS ` with a plain identifier after it.
-    parts = re.split(r"\s+AS\s+", body, flags=re.IGNORECASE)
-    if len(parts) < 2:
-        return None
-    alias = parts[-1].strip().strip(",").strip()
-    expr = " AS ".join(parts[:-1]).strip()
-    # Alias should be a bare identifier (letters/digits/_). If not, bail.
-    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", alias):
-        return None
-    return expr, alias
-
-
-def _snake(name: str) -> str:
-    """Turn `DimCustomer` into `dim_customer` for dbt model naming."""
-    s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
-    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
-
-
-def _source_table_for(spec: MappingSpec) -> tuple[str, str] | None:
-    """Unique (schema, table) across spec.source_fqns, or None if the spec uses multiple tables."""
-    tables: set[tuple[str, str]] = set()
-    for fqn in spec.source_fqns:
-        parts = fqn.split(".")
-        if len(parts) < 2:
-            return None
-        tables.add((parts[0], parts[1]))
-    return tables.pop() if len(tables) == 1 else None
-
-
-def _target_table_for(spec: MappingSpec) -> tuple[str, str]:
-    parts = spec.target_fqn.split(".")
-    if len(parts) < 3:
-        raise ValueError(f"target_fqn {spec.target_fqn!r} must be schema.table.column")
-    return parts[0], parts[1]
-
-
-def _model_name(target_schema: str, target_table: str, src_schema: str, src_table: str) -> str:
-    return f"stg_{_snake(target_table)}_from_{_snake(src_schema)}_{_snake(src_table)}"
 
 
 def _format_comment(spec: MappingSpec) -> str:
@@ -104,12 +56,12 @@ def _emit_one_model(
     source_name: str,
     out_dir: Path,
 ) -> Path:
-    name = _model_name(target_schema, target_table, src_schema, src_table)
+    name = model_name(target_schema, target_table, src_schema, src_table)
     source_tbl = f"{src_schema}_{src_table}"
 
     select_lines: list[str] = []
     for i, spec in enumerate(specs):
-        parsed = _split_select_expr(spec.sql)
+        parsed = split_select_expr(spec.sql)
         if parsed is None:
             # Couldn't parse — emit as a commented block so dbt still parses the file.
             select_lines.append(f"    -- UNPARSEABLE SPEC for {spec.target_fqn}: {spec.sql!r}")
@@ -151,11 +103,11 @@ def write_models(
     groups: dict[tuple[str, str, str, str], list[MappingSpec]] = defaultdict(list)
     skipped: list[MappingSpec] = []
     for spec in specs:
-        src = _source_table_for(spec)
+        src = source_table_for(spec)
         if src is None:
             skipped.append(spec)
             continue
-        tgt_schema, tgt_table = _target_table_for(spec)
+        tgt_schema, tgt_table = target_table_for(spec)
         groups[(tgt_schema, tgt_table, src[0], src[1])].append(spec)
 
     written: list[Path] = []
