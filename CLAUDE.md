@@ -2,9 +2,13 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** **M1 complete** (tag `m1-complete`). Real-LLM accuracy number landed against Gemini 2.5 Flash (paid tier-1) on AdventureWorks: **65.8% inclusive / 83.3% exclusive** exact match, **72.6% validator pass rate**, **9/10 dbt models build clean**. 24+ commits on `main`, 104 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Three eval re-runs converged on the same accuracy number even after prompt + dialect-translator fixes — DERIVED 0/8 is the M2 target. Total session LLM spend: ~$0.32 of the $3 cap (most via prompt-hash cache).
+**Current milestone:** **M2.1 complete** (tag `m2.1-complete`). Real-LLM accuracy lifted on AdventureWorks (Gemini 2.5 Flash, paid tier-1): **71.1% inclusive / 90.0% exclusive** exact match (was 65.8% / 83.3% at M1), **71.8% validator pass rate**, **9/10 dbt models build clean** (HumanResources.Employee ODBC type -151 still the known fail). DERIVED 0/8 → 1/8 EXACT (ExtendedAmount via multi-acceptable goldens); RENAME 25/30 → 26/30 EXACT (CustomerKey unintended bonus from computed-column embedding enrichment). 25+ commits on `main`, 108 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Total M2.1 LLM spend: ~0.6 cents at Flash tier-1 — far below the $0.30/full-eval estimate.
 
-**M2 starts here:** Read the "What's left — M2 entry-points" section at the bottom of this file. **M2.1 (lift DERIVED accuracy) is the highest-ROI starting point** and the gap is well-characterized by the run #3 eval report on disk at `benchmarks/adventureworks/out/eval_report.json` (gitignored but preserved). Compare any M2 attempt against the M1 baseline: 65.8% inclusive / 83.3% exclusive exact match, 0/8 DERIVED exact.
+**Baseline preserved on disk:** `benchmarks/adventureworks/out/eval_report.m1-baseline.json` (gitignored but kept). Diff against `eval_report.json` to measure any future change.
+
+**M2.2+ starts here:** Read the "What's left — M2 entry-points" section at the bottom. **M2.1.x follow-ups (DiscountAmount + SalesAmount tuning) and M2.2 (multi-table JOIN for TaxAmt/Freight) are the highest-ROI next steps.** M2.1.x is small prompt iteration; M2.2 is architectural and will reuse the computed_definition enrichment infrastructure shipped in M2.1.
+
+**Canonical M2.1 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\continue-with-m2-1-from-lexical-barto.md` — describes the M2.1 scope and the realistic-vs-best-case projections. M2.1 is shipped; write a new plan file for M2.1.x or M2.2 work.
 
 **Canonical M1 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\i-want-to-do-jiggly-yeti.md` — describes the M1 scope; useful context but M1 is shipped. Write a new plan file for M2 work; don't edit the M1 one.
 
@@ -214,8 +218,10 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
+<pending> Refresh CLAUDE.md for M2.1-complete state                         (108 tests)
+4346c93  M2.1: Lift accuracy 65.8% -> 71.1% via prompt + retrieval + multi-acceptable goldens (108 tests)
+0c7c498  Polish CLAUDE.md hand-off for fresh M2 session                     (104 tests)
 45c9fb8  Refresh CLAUDE.md for M1-complete state                            (104 tests)
-<pending> Hand-off CLAUDE.md polish for fresh M2 session                    (104 tests)
 894ac59  Translate SQL Server types to DuckDB equivalents in Rename CAST    (104 tests)
 96e8c1c  Lift accuracy: DuckDB dialect hint in DERIVED + classifier few-shot (103 tests)
 4b4b402  Wire Gemini usage_metadata into LLMClient + EvalReport telemetry   (103 tests)
@@ -244,25 +250,25 @@ df0a8ae  M0 Day 4 scaffolding: Gemini + Langfuse ready for API keys
 2df890d  M0 Day 1: scaffold
 ```
 
-Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59` (latest).
-Public repo: https://github.com/mohammad-alshaer/integration-agent — first push landed mid-session.
+Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1-complete` on `<pending>` (latest).
+Public repo: https://github.com/mohammad-alshaer/integration-agent — first push landed mid-M1 session.
 
 ---
 
 ## What's left — M2 entry-points
 
-M1 is shipped + tagged + pushed. M2 starts here. Ordered by impact-to-effort:
+M1 + M2.1 are shipped + tagged + pushed. M2.1.x and M2.2+ start here. Ordered by impact-to-effort:
 
-### M2.1 — Lift DERIVED accuracy (highest ROI)
+### M2.1.x — DiscountAmount + SalesAmount fine-tuning (small)
 
-DERIVED is 0/8 exact in the M1 number. Three failure clusters from run #3 diagnosis:
-- **2 stylistic alternatives** (`ExtendedAmount`, `SalesAmount`): classifier picks the persisted-computed source (`LineTotal`) which is semantically equivalent to the golden's primitive arithmetic. Either re-author the golden to accept this style, or add anti-stylistic few-shot to override.
-- **1 genuinely wrong** (`DiscountAmount`): classifier picks `UnitPriceDiscount` alone (a percentage) instead of the arithmetic `UnitPrice * UnitPriceDiscount * OrderQty`. Sharper few-shot or a column-name heuristic.
-- **4 UNSUPPORTED_IN_M1** (`TaxAmt`, `Freight`, `BirthDate`, `YearlyIncome`, `EmailAddress`, `DateFirstPurchase`): genuinely beyond M1 scope (multi-table allocations, XML shredding, aggregations, cross-table lookups). Each is a new pattern + generator.
+M2.1 lifted DERIVED 0/8 → 1/8 EXACT but left two specific gaps worth a follow-up pass:
+
+- **DiscountAmount regressed MISMATCH → MISSING.** The new "amount-vs-percentage" disambiguation bullet (`packages/agents/src/agents/pattern_classifier.py:86-89`) pushed the classifier toward `unsupported_in_m1` instead of attempting DERIVED arithmetic. Same EXACT count (zero), but worse user-facing — no spec generated at all. **Try:** remove the disambiguation bullet, keep only the few-shot example. Or rephrase the bullet to be less ambiguous about scope. ~5 LoC + a re-eval (~$0.006).
+- **SalesAmount unchanged.** Despite computed-column enrichment surfacing `LineTotal`'s formula, the model still emits DERIVED with wrong sources (`UnitPrice, UnitPriceDiscount, TaxAmt`). Hypothesis: the LLM rerank step in `semantic_matcher.py` discards LineTotal even when the embedder retrieves it. **Investigate:** add debug logging to the matcher to show what LineTotal's similarity score is and where it ranks; the rerank prompt may need a hint that "computed columns whose formula matches the target's intent are first-class candidates."
 
 ### M2.2 — Multi-source-table DERIVED + JOIN modeling
 
-The `_unmodeled_multi_source.txt` sidecar pattern in `packages/dbt_emit/src/dbt_emit/model.py` punts on multi-source specs. Extending it to emit JOIN-aware dbt models unlocks `FactInternetSales.TaxAmt`/`Freight` (and probably half a dozen more).
+The `_unmodeled_multi_source.txt` sidecar pattern in `packages/dbt_emit/src/dbt_emit/model.py` punts on multi-source specs. Extending it to emit JOIN-aware dbt models unlocks `FactInternetSales.TaxAmt`/`Freight` (and probably half a dozen more). M2.1's `computed_definition` enrichment is already in place — JOIN candidates that touch computed columns (e.g. `LineTotal` in `Detail.LineTotal × Header.TaxAmt / Header.SubTotal`) will retrieve correctly without further infrastructure work.
 
 ### M2.3 — DuckDB-executed SQL equivalence (4th match level)
 
@@ -290,12 +296,16 @@ Telemetry now reports tokens; per-provider price tables would convert that to do
 4. **`mean_llm_confidence=1.0`** in the eval report shows the model is overconfident — never says "I'm unsure" even when it's wrong (run #3 had several mismatches all at confidence=1.0). Calibration is M2-territory; needs prompt-engineered uncertainty.
 5. **`tokens_in_total=0` + `prompt_cache_hit_rate=0%` per-spec** in the run #3 report is correct (run #3 was 100% cache hit) but misleading at first glance. The pipeline-level fields (`pipeline_total_llm_calls`, `pipeline_total_tokens_in/out`, `pipeline_cache_hit_rate`) tell the honest story; the per-spec fields only fire on cold runs.
 
+6. **`tmp/profiles/aw2022_filtered.json` was enriched in place during M2.1** with `computed_definition` for the 10 computed columns in AdventureWorks2022 (notably `Sales.SalesOrderDetail.LineTotal` and `Sales.SalesOrderHeader.TotalDue`). The one-off enrichment script lives at `tmp/enrich_computed.py` (gitignored). If you re-profile from scratch via `python -m worker profile`, the new field is populated automatically by `introspect.py`. Backward-compat: `computed_definition` is `Optional[str]`, so old profile JSONs load fine.
+
+7. **The classifier prompt is now ~9 LoC longer** than M1 (Step 1 of M2.1 added an amount-vs-percentage bullet + DiscountAmount few-shot at `pattern_classifier.py:78-105`). Watch for prompt-bloat regressions when adding more disambiguation rules — DiscountAmount itself regressed from MISMATCH to MISSING after this addition.
+
 ---
 
 ## When in doubt
 
-1. **For M2 work:** start with the "What's left — M2 entry-points" section above. Compare any change against the M1 baseline numbers in `benchmarks/adventureworks/out/eval_report.json`.
-2. **For project history:** the historical M1 plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md` is reference-only.
+1. **For M2.1.x or M2.2 work:** start with the "What's left — M2 entry-points" section above. Compare any change against the M2.1 numbers in `benchmarks/adventureworks/out/eval_report.json` (the live report) AND `eval_report.m1-baseline.json` (the M1 floor). Both are gitignored but kept on disk.
+2. **For project history:** the M1 plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md` and the M2.1 plan at `~/.claude/plans/continue-with-m2-1-from-lexical-barto.md` are reference-only.
 3. **Memory:** check `MEMORY.md` for project/feedback notes about Mohammad's preferences and corporate environment specifics.
 4. **For DataOps / Claude-specific concept questions**, explain foundational concepts (eval, RAG, dbt, embeddings, LangGraph state machines, etc.) with a concrete example tied to the current task. Mohammad is a new-grad — don't just name-drop.
 5. **Cost discipline:** Mohammad prefers free/free-tier solutions; surface cost estimates upfront on any paid-service decision. Gemini Flash paid tier-1 is already configured (~$0.30/full eval; cache makes re-runs nearly free).
