@@ -49,6 +49,7 @@ class ColumnProfile(BaseModel):
     is_foreign_key: bool
     fk_ref: str | None = None
     ms_description: str | None = None
+    computed_definition: str | None = None
 
     # Profile stats (filled in from sampled rows)
     null_rate: float = Field(ge=0.0, le=1.0)

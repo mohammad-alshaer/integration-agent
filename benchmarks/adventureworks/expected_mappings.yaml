@@ -170,6 +170,10 @@ mappings:
     expected_source_fqns: [Sales.SalesOrderDetail.UnitPrice, Sales.SalesOrderDetail.OrderQty]
     disputed: false
     note: "UnitPrice * OrderQty"
+    accepted_alternatives:
+      - pattern: rename
+        source_fqns: [Sales.SalesOrderDetail.LineTotal]
+        reason: "LineTotal is a persisted computed column whose definition IS UnitPrice * OrderQty; either form is correct in production."
 
   - target_fqn: dbo.FactInternetSales.UnitPriceDiscountPct
     expected_pattern: rename
@@ -190,6 +194,13 @@ mappings:
     expected_source_fqns: [Sales.SalesOrderDetail.LineTotal]
     disputed: true
     note: "LineTotal is a persisted computed column in OLTP; could classify as DERIVED if LLM sees the formula instead of the column."
+    accepted_alternatives:
+      - pattern: derived
+        source_fqns:
+          - Sales.SalesOrderDetail.UnitPrice
+          - Sales.SalesOrderDetail.OrderQty
+          - Sales.SalesOrderDetail.UnitPriceDiscount
+        reason: "Recomputing the LineTotal formula explicitly: UnitPrice * (1 - UnitPriceDiscount) * OrderQty; semantically equivalent to LineTotal."
 
   - target_fqn: dbo.FactInternetSales.TaxAmt
     expected_pattern: derived

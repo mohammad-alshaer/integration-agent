@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
+
 from evals import classify_match, normalize_sql, score
-from evals.models import ExpectedMapping, ExpectedMappingsFile, MatchLevel
+from evals.models import (
+    ExpectedAlternative,
+    ExpectedMapping,
+    ExpectedMappingsFile,
+    MatchLevel,
+)
 from schemas import DbtTest, MappingSpec, Pattern
 
 
@@ -113,6 +120,57 @@ def test_classify_match_mismatch_when_nothing_lines_up() -> None:
     exp = _expected("dbo.T.c", Pattern.DERIVED, ["s.S.a", "s.S.b"])
     actual = _spec("dbo.T.c", ["s.S.x"], Pattern.RENAME, "SELECT x AS c")
     assert classify_match(exp, actual) == MatchLevel.MISMATCH
+
+
+# ---------- multi-acceptable goldens (M2.1) ----------
+
+
+def _expected_with_alts(
+    target_fqn: str,
+    pattern: Pattern,
+    source_fqns: list[str],
+    *,
+    alternatives: list[tuple[Pattern, list[str], str]],
+    disputed: bool = False,
+) -> ExpectedMapping:
+    return ExpectedMapping(
+        target_fqn=target_fqn,
+        expected_pattern=pattern,
+        expected_source_fqns=source_fqns,
+        disputed=disputed,
+        accepted_alternatives=[
+            ExpectedAlternative(pattern=p, source_fqns=s, reason=r)
+            for (p, s, r) in alternatives
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    ("actual_pattern", "actual_sources", "expected_level"),
+    [
+        # Primary form matches → EXACT
+        (Pattern.DERIVED, ["s.S.a", "s.S.b"], MatchLevel.EXACT),
+        # Alternative form matches → EXACT (the stylistic-equivalent form)
+        (Pattern.RENAME, ["s.S.computed_ab"], MatchLevel.EXACT),
+        # Neither form matches; pattern differs from primary; SQL doesn't carry expected tokens → MISMATCH
+        (Pattern.RENAME, ["s.S.x"], MatchLevel.MISMATCH),
+    ],
+)
+def test_classify_match_accepts_alternatives(
+    actual_pattern: Pattern,
+    actual_sources: list[str],
+    expected_level: MatchLevel,
+) -> None:
+    exp = _expected_with_alts(
+        "dbo.T.c",
+        Pattern.DERIVED,
+        ["s.S.a", "s.S.b"],
+        alternatives=[
+            (Pattern.RENAME, ["s.S.computed_ab"], "computed_ab is a persisted column = a + b"),
+        ],
+    )
+    actual = _spec("dbo.T.c", actual_sources, actual_pattern, "SELECT x AS c")
+    assert classify_match(exp, actual) == expected_level
 
 
 # ---------- score — the offline DoD + bucket coverage ----------

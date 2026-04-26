@@ -51,6 +51,10 @@ def column_embed_text(col: ColumnProfile) -> str:
     ]
     if col.ms_description:
         parts.append(f"description: {col.ms_description}")
+    if col.computed_definition:
+        # Surface the underlying T-SQL formula so e.g. LineTotal embeds near
+        # "UnitPrice * OrderQty" targets. Truncated to bound token cost.
+        parts.append(f"computed as: {col.computed_definition[:200]}")
     if col.top_values:
         tv = ", ".join(repr(v) for v, _ in col.top_values[:5])
         parts.append(f"top values: {tv}")

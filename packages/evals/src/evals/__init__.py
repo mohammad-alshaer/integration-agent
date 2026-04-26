@@ -3,6 +3,7 @@
 from evals.golden import load_expected
 from evals.models import (
     EvalReport,
+    ExpectedAlternative,
     ExpectedMapping,
     ExpectedMappingsFile,
     MatchLevel,
@@ -13,6 +14,7 @@ from evals.scorer import classify_match, normalize_sql, score
 
 __all__ = [
     "EvalReport",
+    "ExpectedAlternative",
     "ExpectedMapping",
     "ExpectedMappingsFile",
     "MatchLevel",

@@ -6,6 +6,7 @@ Reads:
   - INFORMATION_SCHEMA.KEY_COLUMN_USAGE + TABLE_CONSTRAINTS   PK/UQ detection
   - INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS + KEY_COLUMN_USAGE   FK graph
   - sys.extended_properties (MS_Description)   human-readable column / table docs
+  - sys.computed_columns (definition)          T-SQL formula for computed columns
 
 System schemas (sys, INFORMATION_SCHEMA) and the dbo.sysdiagrams noise table are filtered.
 
@@ -15,12 +16,15 @@ running aggregate queries against the live database in one pass per table.
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from datetime import UTC, datetime
 
 import pyodbc
 
 from schemas import ColumnProfile, SchemaProfile, TableProfile
+
+log = logging.getLogger(__name__)
 
 # Tables / schemas we always skip
 _SKIP_SCHEMAS = frozenset({"sys", "INFORMATION_SCHEMA"})
@@ -142,6 +146,34 @@ def _column_descriptions(cur: pyodbc.Cursor) -> dict[tuple[str, str, str], str]:
     return {(s, t, c): d for s, t, c, d in cur.fetchall()}
 
 
+def _computed_definitions(cur: pyodbc.Cursor) -> dict[tuple[str, str, str], str]:
+    """(schema, table, column) -> T-SQL `definition` from sys.computed_columns.
+
+    Computed columns embed the underlying formula (e.g. LineTotal = UnitPrice * OrderQty);
+    surfacing the definition lets downstream embedders see the formula text rather than
+    just the column name. Failures here degrade gracefully — the introspector keeps
+    working without computed-column enrichment.
+    """
+    try:
+        cur.execute(
+            """
+            SELECT  sch.name AS table_schema,
+                    tab.name AS table_name,
+                    col.name AS column_name,
+                    cc.definition AS definition
+            FROM    sys.computed_columns cc
+            JOIN    sys.tables   tab ON cc.object_id = tab.object_id
+            JOIN    sys.schemas  sch ON tab.schema_id = sch.schema_id
+            JOIN    sys.columns  col ON cc.object_id = col.object_id
+                                    AND cc.column_id = col.column_id;
+            """
+        )
+        return {(s, t, c): d for s, t, c, d in cur.fetchall() if d}
+    except pyodbc.Error as exc:
+        log.warning("introspect: sys.computed_columns query failed; continuing without enrichment: %s", exc)
+        return {}
+
+
 def _table_descriptions(cur: pyodbc.Cursor) -> dict[tuple[str, str], str]:
     """(schema, table) -> MS_Description from sys.extended_properties (minor_id=0)."""
     cur.execute(
@@ -184,6 +216,7 @@ def introspect_schema(conn: pyodbc.Connection, database: str, *, role: str) -> S
     pks = _primary_keys(cur)
     fks = _foreign_keys(cur)
     col_docs = _column_descriptions(cur)
+    computed_defs = _computed_definitions(cur)
     tbl_docs = _table_descriptions(cur)
     row_est = _row_count_estimates(cur)
 
@@ -211,6 +244,7 @@ def introspect_schema(conn: pyodbc.Connection, database: str, *, role: str) -> S
                     is_foreign_key=(schema, name, col) in fk_col_index,
                     fk_ref=fk_col_index.get((schema, name, col)),
                     ms_description=col_docs.get((schema, name, col)),
+                    computed_definition=computed_defs.get((schema, name, col)),
                     # Profile stats filled by profile_tables(); zero placeholders:
                     null_rate=0.0,
                     distinct_count=0,

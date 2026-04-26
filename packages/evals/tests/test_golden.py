@@ -9,7 +9,7 @@ import yaml
 from pydantic import ValidationError
 
 from evals import load_expected
-from evals.models import ExpectedMapping, ExpectedMappingsFile
+from evals.models import ExpectedAlternative, ExpectedMapping, ExpectedMappingsFile
 from schemas import Pattern
 
 
@@ -116,3 +116,18 @@ def test_expected_mapping_construction() -> None:
     )
     assert m.disputed is False
     assert m.note is None
+    assert m.accepted_alternatives == []
+
+
+def test_expected_mapping_rejects_more_than_two_alternatives() -> None:
+    too_many = [
+        ExpectedAlternative(pattern=Pattern.RENAME, source_fqns=[f"s.S.x{i}"], reason="r")
+        for i in range(3)
+    ]
+    with pytest.raises(ValidationError):
+        ExpectedMapping(
+            target_fqn="dbo.T.c",
+            expected_pattern=Pattern.DERIVED,
+            expected_source_fqns=["s.S.c"],
+            accepted_alternatives=too_many,
+        )

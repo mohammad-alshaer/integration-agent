@@ -5,9 +5,23 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from schemas import Pattern
+
+
+class ExpectedAlternative(BaseModel):
+    """A semantically-equivalent alternative form a model may legitimately emit.
+
+    Stylistic alternatives in schema mapping (e.g. `RENAME [LineTotal]` vs
+    `DERIVED [UnitPrice, OrderQty]`) are both correct in production. Listing them
+    here lets the scorer credit either form as EXACT. `reason` is required so
+    every alternative is justified at review time — mitigates rubber-stamping.
+    """
+
+    pattern: Pattern
+    source_fqns: list[str]
+    reason: str
 
 
 class ExpectedMapping(BaseModel):
@@ -16,6 +30,18 @@ class ExpectedMapping(BaseModel):
     expected_source_fqns: list[str]
     disputed: bool = False
     note: str | None = None
+    accepted_alternatives: list[ExpectedAlternative] = Field(default_factory=list)
+
+    @field_validator("accepted_alternatives")
+    @classmethod
+    def _max_two_alternatives(
+        cls, v: list[ExpectedAlternative]
+    ) -> list[ExpectedAlternative]:
+        if len(v) > 2:
+            raise ValueError(
+                "max 2 accepted_alternatives per spec; gate against scorer rubber-stamping"
+            )
+        return v
 
 
 class ExpectedMappingsFile(BaseModel):

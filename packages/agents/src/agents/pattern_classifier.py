@@ -84,6 +84,10 @@ Disambiguation guidance:
     holds the answer is a `rename`, even though its underlying definition is arithmetic.
   - Pick `concat` when the target is a string built by joining 2+ string source columns.
     Single-source string mappings are `rename`, not `concat`.
+  - When the target name has an `...Amount` suffix and a candidate is a percentage column
+    (name contains `Discount` or `Pct` and represents a 0..1 ratio), prefer `derived` multiplying
+    the percentage × the related price × quantity. A bare percentage column is rarely the
+    final dollar amount.
 
 Examples:
   TARGET: dbo.DimCustomer.FullName (VARCHAR)
@@ -99,6 +103,11 @@ Examples:
   CANDIDATES: 1. Sales.SalesOrderDetail.LineTotal  (a persisted computed column)
   -> pattern=rename, source_fqns=[Sales.SalesOrderDetail.LineTotal]
      (LineTotal already holds the value; no recomputation needed downstream)
+
+  TARGET: dbo.FactInternetSales.DiscountAmount (DECIMAL)
+  CANDIDATES: 1. Sales.SalesOrderDetail.UnitPrice  2. Sales.SalesOrderDetail.UnitPriceDiscount (a percentage 0..1)  3. Sales.SalesOrderDetail.OrderQty
+  -> pattern=derived, source_fqns=[Sales.SalesOrderDetail.UnitPrice, Sales.SalesOrderDetail.UnitPriceDiscount, Sales.SalesOrderDetail.OrderQty]
+     (multiplication: UnitPrice * UnitPriceDiscount * OrderQty — discount-percentage applied to extended amount)
 """
 
 

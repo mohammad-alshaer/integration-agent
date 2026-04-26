@@ -87,10 +87,16 @@ def normalize_sql(sql: str) -> str:
 def classify_match(expected: ExpectedMapping, actual: MappingSpec | None) -> MatchLevel:
     if actual is None:
         return MatchLevel.MISSING
-    e_set = frozenset(expected.expected_source_fqns)
     a_set = frozenset(actual.source_fqns)
-    if expected.expected_pattern == actual.pattern and e_set == a_set:
-        return MatchLevel.EXACT
+    # EXACT can match either the primary expected form OR any accepted alternative
+    # (semantically-equivalent stylistic variant). Only EXACT is widened — PATTERN /
+    # SQL_SEMANTIC / MISMATCH are measured against the primary so per-pattern bucket
+    # counts stay honest.
+    forms = [(expected.expected_pattern, frozenset(expected.expected_source_fqns))]
+    forms += [(alt.pattern, frozenset(alt.source_fqns)) for alt in expected.accepted_alternatives]
+    for pat, src_set in forms:
+        if actual.pattern == pat and a_set == src_set:
+            return MatchLevel.EXACT
     if expected.expected_pattern == actual.pattern:
         return MatchLevel.PATTERN
     norm = normalize_sql(actual.sql)
