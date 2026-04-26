@@ -2,7 +2,7 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** **M2.1 complete** (tag `m2.1-complete`). Real-LLM accuracy lifted on AdventureWorks (Gemini 2.5 Flash, paid tier-1): **71.1% inclusive / 90.0% exclusive** exact match (was 65.8% / 83.3% at M1), **71.8% validator pass rate**, **9/10 dbt models build clean** (HumanResources.Employee ODBC type -151 still the known fail). DERIVED 0/8 → 1/8 EXACT (ExtendedAmount via multi-acceptable goldens); RENAME 25/30 → 26/30 EXACT (CustomerKey unintended bonus from computed-column embedding enrichment). 25+ commits on `main`, 108 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Total M2.1 LLM spend: ~0.6 cents at Flash tier-1 — far below the $0.30/full-eval estimate.
+**Current milestone:** **M2.1 + M2.1.x complete** (tag `m2.1-complete` on the M2.1 commit; M2.1.x is incremental polish on top). Real-LLM accuracy on AdventureWorks (Gemini 2.5 Flash, paid tier-1): **71.1% inclusive / 90.0% exclusive** exact match (M2.1.x preserves M2.1 headline; the change is in the missing/mismatch ratio). DERIVED 1/8 EXACT (ExtendedAmount via multi-acceptable goldens); RENAME 26/30 EXACT (CustomerKey lifted by computed-column embedding enrichment). M2.1.x recovered DiscountAmount from MISSING → MISMATCH by reverting an over-prescriptive classifier disambiguation bullet (the few-shot remained, but the bullet was pushing the model to `unsupported_in_m1` when canonical sources weren't in the candidate set). **9/10 dbt models build clean** (HumanResources.Employee ODBC type -151 still the known fail). 27+ commits on `main`, 108 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Total M2.1+M2.1.x LLM spend: ~1.5 cents at Flash tier-1.
 
 **Baseline preserved on disk:** `benchmarks/adventureworks/out/eval_report.m1-baseline.json` (gitignored but kept). Diff against `eval_report.json` to measure any future change.
 
@@ -218,6 +218,8 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
+<pending> M2.1.x: revert classifier disambiguation bullet + document findings (108 tests)
+0887f75  Fill in m2.1-complete tag hash + CLAUDE.md refresh hash             (108 tests)
 492afa7  Refresh CLAUDE.md for M2.1-complete state                         (108 tests)
 4346c93  M2.1: Lift accuracy 65.8% -> 71.1% via prompt + retrieval + multi-acceptable goldens (108 tests)
 0c7c498  Polish CLAUDE.md hand-off for fresh M2 session                     (104 tests)
@@ -259,12 +261,14 @@ Public repo: https://github.com/mohammad-alshaer/integration-agent — first pus
 
 M1 + M2.1 are shipped + tagged + pushed. M2.1.x and M2.2+ start here. Ordered by impact-to-effort:
 
-### M2.1.x — DiscountAmount + SalesAmount fine-tuning (small)
+### M2.1.x — Done; documented findings (next investigation is M2.X target enrichment)
 
-M2.1 lifted DERIVED 0/8 → 1/8 EXACT but left two specific gaps worth a follow-up pass:
+M2.1.x landed: **disambiguation bullet reverted, DiscountAmount recovered to MISMATCH**, headline metrics unchanged (71.1% inclusive / 90.0% exclusive). The investigation also disproved the matcher-rerank hypothesis — see `tmp/debug_salesamount.py` (gitignored) for the diagnostic.
 
-- **DiscountAmount regressed MISMATCH → MISSING.** The new "amount-vs-percentage" disambiguation bullet (`packages/agents/src/agents/pattern_classifier.py:86-89`) pushed the classifier toward `unsupported_in_m1` instead of attempting DERIVED arithmetic. Same EXACT count (zero), but worse user-facing — no spec generated at all. **Try:** remove the disambiguation bullet, keep only the few-shot example. Or rephrase the bullet to be less ambiguous about scope. ~5 LoC + a re-eval (~$0.006).
-- **SalesAmount unchanged.** Despite computed-column enrichment surfacing `LineTotal`'s formula, the model still emits DERIVED with wrong sources (`UnitPrice, UnitPriceDiscount, TaxAmt`). Hypothesis: the LLM rerank step in `semantic_matcher.py` discards LineTotal even when the embedder retrieves it. **Investigate:** add debug logging to the matcher to show what LineTotal's similarity score is and where it ranks; the rerank prompt may need a hint that "computed columns whose formula matches the target's intent are first-class candidates."
+**Confirmed retrieval-side blockers (M2.X work needed):**
+- **SalesAmount cannot reach RENAME[LineTotal] via prompt tuning.** Debug script confirms LineTotal is NOT in HNSW top-20 for SalesAmount. The target's `column_embed_text` is too sparse (`dbo.FactInternetSales.SalesAmount | type: money` — no `ms_description` on AWDW columns), so the embedder ranks "money"-typed columns higher than LineTotal regardless of LineTotal's enriched source-side text. Fix requires **target-side enrichment** (LLM-derived descriptions for AWDW columns) — not in M2.1.x scope.
+- **DiscountAmount cannot reach DERIVED[UnitPrice, UnitPriceDiscount, OrderQty]**. OrderQty is at rank 19 with k=20 — outside the default k=10. The classifier physically can't return sources not in the candidate set. Bumping default k risks matcher-prompt bloat; the cleaner fix is target enrichment (same as SalesAmount).
+- **Matcher rerank changes don't help and can regress.** Tried surfacing `computed_definition` in the rerank prompt (formula display + system-prompt sentence) — regressed CustomerKey EXACT → PATTERN without unlocking SalesAmount/DiscountAmount. Reverted. Don't retry without solving the retrieval blocker first.
 
 ### M2.2 — Multi-source-table DERIVED + JOIN modeling
 
@@ -298,7 +302,9 @@ Telemetry now reports tokens; per-provider price tables would convert that to do
 
 6. **`tmp/profiles/aw2022_filtered.json` was enriched in place during M2.1** with `computed_definition` for the 10 computed columns in AdventureWorks2022 (notably `Sales.SalesOrderDetail.LineTotal` and `Sales.SalesOrderHeader.TotalDue`). The one-off enrichment script lives at `tmp/enrich_computed.py` (gitignored). If you re-profile from scratch via `python -m worker profile`, the new field is populated automatically by `introspect.py`. Backward-compat: `computed_definition` is `Optional[str]`, so old profile JSONs load fine.
 
-7. **The classifier prompt is now ~9 LoC longer** than M1 (Step 1 of M2.1 added an amount-vs-percentage bullet + DiscountAmount few-shot at `pattern_classifier.py:78-105`). Watch for prompt-bloat regressions when adding more disambiguation rules — DiscountAmount itself regressed from MISMATCH to MISSING after this addition.
+7. **The classifier prompt is ~5 LoC longer than M1** (M2.1 added 2 few-shot examples for ExtendedAmount + SalesAmount; M2.1.x removed the 4-LoC amount-vs-percentage disambiguation bullet because it was over-prescriptive). Watch for prompt-bloat regressions when adding more disambiguation rules — the M2.1.x DiscountAmount investigation showed that prescriptive bullets without reachable canonical sources push the model into `unsupported_in_m1`.
+
+8. **Target-side embedding enrichment is the next major lever.** AWDW column profiles mostly lack `ms_description`, so target embed text is `fqn | type: ...` only. This caps retrieval quality for ambiguously-named target columns (SalesAmount → can't find LineTotal; DiscountAmount → can't find OrderQty). The fix is an LLM enrichment pass over the target profile to generate descriptions, OR re-introspect AWDW with extended-properties enabled. Either way, do this before tuning the matcher again.
 
 ---
 
