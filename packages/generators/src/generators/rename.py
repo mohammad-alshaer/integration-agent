@@ -14,6 +14,7 @@ from generators.base import (
     column_alias,
     default_tests_for_target,
     quote_col,
+    to_duckdb_type,
     types_compatible,
 )
 from schemas import DbtTest, MappingProposal, MappingSpec, Pattern
@@ -34,14 +35,15 @@ class RenameGenerator:
         if types_compatible(src.sql_type, tgt.sql_type):
             sql = f"SELECT {src_col} AS {alias}"
         else:
-            sql = f"SELECT CAST({src_col} AS {tgt.sql_type}) AS {alias}"
+            duckdb_type = to_duckdb_type(tgt.sql_type)
+            sql = f"SELECT CAST({src_col} AS {duckdb_type}) AS {alias}"
 
         rationale = proposal.rationale or (
             f"1:1 rename from {src.fqn} to {tgt.fqn}"
             + (
                 ""
                 if types_compatible(src.sql_type, tgt.sql_type)
-                else f" with CAST to {tgt.sql_type}"
+                else f" with CAST to {to_duckdb_type(tgt.sql_type)}"
             )
         )
 

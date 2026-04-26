@@ -42,7 +42,7 @@ class TestRenameTypeHandling:
         assert "CustomerID AS CustomerKey" in spec.sql
         assert "CAST" not in spec.sql
 
-    def test_cast_when_types_differ(self) -> None:
+    def test_cast_when_types_differ_translates_to_duckdb(self) -> None:
         src = _col("Sales.SalesOrderHeader.Status", "tinyint")
         tgt = _col("dbo.DimOrder.StatusCode", "nvarchar(10)")
         proposal = MappingProposal(
@@ -52,8 +52,23 @@ class TestRenameTypeHandling:
             rationale="",
         )
         spec = RenameGenerator().generate(proposal, GenerationContext(target=tgt, sources=[src]))
-        assert "CAST(Status AS nvarchar(10))" in spec.sql
+        # SQL Server `nvarchar(10)` becomes DuckDB-compatible `VARCHAR(10)` so the
+        # validator + dbt-duckdb don't reject the CAST.
+        assert "CAST(Status AS VARCHAR(10))" in spec.sql
         assert "AS StatusCode" in spec.sql
+
+    def test_money_target_emits_decimal_cast(self) -> None:
+        """W4-E showed CAST(... AS money) errors; DuckDB has no MONEY type."""
+        src = _col("Sales.SalesOrderDetail.LineTotal", "numeric(38,6)")
+        tgt = _col("dbo.FactInternetSales.ExtendedAmount", "money")
+        spec = RenameGenerator().generate(
+            MappingProposal(
+                target_fqn=tgt.fqn, source_fqns=[src.fqn], pattern=Pattern.RENAME, rationale=""
+            ),
+            GenerationContext(target=tgt, sources=[src]),
+        )
+        assert "CAST(LineTotal AS DECIMAL(19,4))" in spec.sql
+        assert "money" not in spec.sql.lower()
 
     def test_nvarchar_size_change_still_compatible(self) -> None:
         """base_type strips size; nvarchar(50) -> nvarchar(100) should NOT CAST."""

@@ -57,6 +57,67 @@ def types_compatible(a: str, b: str) -> bool:
     return base_type(a) == base_type(b)
 
 
+# SQL Server -> DuckDB type translation. The validator runs against DuckDB so any
+# SQL Server-only type names emitted in CAST(...) cause the validator to fail.
+# Same mapping is reused for dbt-duckdb until M4+ swaps in dbt-sqlserver.
+_SS_TO_DUCKDB_BASE: dict[str, str] = {
+    "money": "DECIMAL(19,4)",
+    "smallmoney": "DECIMAL(10,4)",
+    "nvarchar": "VARCHAR",
+    "nchar": "VARCHAR",
+    "ntext": "VARCHAR",
+    "varchar": "VARCHAR",
+    "char": "VARCHAR",
+    "text": "VARCHAR",
+    "datetime2": "TIMESTAMP",
+    "datetime": "TIMESTAMP",
+    "smalldatetime": "TIMESTAMP",
+    "datetimeoffset": "TIMESTAMP",
+    "bit": "BOOLEAN",
+    "uniqueidentifier": "UUID",
+    "image": "BLOB",
+    "varbinary": "BLOB",
+    "binary": "BLOB",
+    "xml": "VARCHAR",
+    "hierarchyid": "VARCHAR",
+    "geography": "VARCHAR",
+    "geometry": "VARCHAR",
+    "sql_variant": "VARCHAR",
+    # Numeric + temporal that DuckDB already supports verbatim need no translation,
+    # but we list them here so unknown types fall through to the original string.
+    "decimal": "DECIMAL",
+    "numeric": "DECIMAL",
+    "int": "INTEGER",
+    "bigint": "BIGINT",
+    "smallint": "SMALLINT",
+    "tinyint": "SMALLINT",
+    "float": "DOUBLE",
+    "real": "REAL",
+    "date": "DATE",
+    "time": "TIME",
+    "boolean": "BOOLEAN",
+}
+
+
+def to_duckdb_type(sql_server_type: str) -> str:
+    """Translate a SQL Server type spec to its DuckDB equivalent.
+
+    Preserves precision/scale where the base type carries it (e.g.,
+    `nvarchar(50)` -> `VARCHAR(50)`, `decimal(19,4)` -> `DECIMAL(19,4)`),
+    drops it where DuckDB doesn't accept it (e.g., `datetime2(7)` -> `TIMESTAMP`).
+    """
+    raw = sql_server_type.strip()
+    base = base_type(raw)
+    mapped = _SS_TO_DUCKDB_BASE.get(base)
+    if mapped is None:
+        return raw  # unknown: pass through
+    if "(" in raw and "(" not in mapped and mapped in {"VARCHAR", "DECIMAL"}:
+        # Re-attach the size/precision tail when DuckDB accepts it
+        tail = raw[raw.index("(") :]
+        return f"{mapped}{tail}"
+    return mapped
+
+
 def default_tests_for_target(target: ColumnProfile) -> list[DbtTest]:
     """Default dbt assertions derivable from the target column metadata alone."""
     tests: list[DbtTest] = []
