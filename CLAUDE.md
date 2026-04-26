@@ -2,7 +2,7 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** M1 W4-D complete (17 commits on `main`, 100 tests passing). W4-E next (real-LLM accuracy number, quota-gated). The full pipeline — graph → retry-with-error-hints → dbt emission → `dbt build` with passing tests (zero deprecation warnings), plus the golden-set scorer — is verified end-to-end offline via `scripts/smoke_graph.py` and the evals tests.
+**Current milestone:** M1 W4-D complete + M2-prep refactor landed (19 commits on `main`, 100 tests passing). W4-E next (real-LLM accuracy number, quota-gated). The full pipeline — graph → retry-with-error-hints → dbt emission → `dbt build` with passing tests (zero deprecation warnings), plus the golden-set scorer — is verified end-to-end offline via `scripts/smoke_graph.py` and the evals tests.
 
 **Canonical plan:** `C:\Users\mfalshaer\.claude\plans\i-want-to-do-jiggly-yeti.md` — read this before any non-trivial work. Always edit the plan incrementally when scope shifts; don't drift silently.
 
@@ -204,7 +204,9 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
-<pending> M1 W4-D: dbt accepted_values deprecation fix + CLAUDE.md refresh   (100 tests)
+<pending> Refresh CLAUDE.md for end-of-W4-D + M2-prep state
+1a24ebe  Refactor: extract dbt_emit parsing helpers into _parsing.py        (100 tests)
+66db0a1  M1 W4-D: dbt accepted_values deprecation fix + CLAUDE.md refresh   (100 tests)
 c341760  M1 W4-C: evals package + golden set + scorer + runner              (100 tests)
 43b4360  M1 W4-B: dbt_emit package + dbt-duckdb build verification          (79 tests)
 93379ff  M1 W4-A: DuckDB sandbox validator + retry-with-error-hints loop    (70 tests)
@@ -225,7 +227,7 @@ df0a8ae  M0 Day 4 scaffolding: Gemini + Langfuse ready for API keys
 2df890d  M0 Day 1: scaffold
 ```
 
-Tags: `m0-complete` on `afb7c6d`.
+Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`.
 
 ---
 
@@ -260,10 +262,10 @@ git tag m1-complete -m "M1 complete — first accuracy number on AdventureWorks"
 
 ## Known-to-carry-over gotchas for the next session
 
-1. **`packages/dbt_emit/src/dbt_emit/schema_yml.py` uses `# noqa: PLC2701`** to import "private" helpers from `model.py` (the `_model_name`, `_snake`, etc. underscore-prefixed functions). Refactor target for M2: move those into `dbt_emit/_parsing.py`.
-2. **`scripts/smoke_graph.py` subprocess-runs `dbt build`.** If that's flaky, check the sandbox DuckDB file — the Parquet temp dir must outlive the `dbt build` call (we keep it alive inside a single `try:` block, cleanup in `finally:`).
-3. **W3 left an observation that Gemini's embedding free tier is also tight** (~100 req/min + 100-request aggregate bucket that fills fast). `GeminiEmbedder` has `inter_batch_delay_sec=1.0` to smooth this.
-4. The filtered real-LLM run at end of W3 (`tmp/profiles/mappings_dimcustomer.json`) produced 0 specs because we blew the daily Gemini Flash quota during the run's matcher/classifier calls. That run's shape proved graceful degradation works (un-enriched targets kept `UNKNOWN`, classifier failures mapped to `UNSUPPORTED_IN_M1`). Nothing broken; just waiting on quota for a clean rerun.
+1. **`scripts/smoke_graph.py` subprocess-runs `dbt build`.** If that's flaky, check the sandbox DuckDB file — the Parquet temp dir must outlive the `dbt build` call (we keep it alive inside a single `try:` block, cleanup in `finally:`).
+2. **W3 left an observation that Gemini's embedding free tier is also tight** (~100 req/min + 100-request aggregate bucket that fills fast). `GeminiEmbedder` has `inter_batch_delay_sec=1.0` to smooth this.
+3. The filtered real-LLM run at end of W3 (`tmp/profiles/mappings_dimcustomer.json`) produced 0 specs because we blew the daily Gemini Flash quota during the run's matcher/classifier calls. That run's shape proved graceful degradation works (un-enriched targets kept `UNKNOWN`, classifier failures mapped to `UNSUPPORTED_IN_M1`). Nothing broken; just waiting on quota for a clean rerun.
+4. **W4-E sample-dir is populated** (2026-04-26): `benchmarks/adventureworks/samples/` now has 17 Parquet files covering all 6 golden-source tables + FK parents. `Person.Address` failed with ODBC type `-151` (geography) and is NOT in the golden set — non-blocker; would need a `CAST(... AS varchar)` workaround in `packages/sqlserver/sample.py` if ever needed.
 
 ---
 
