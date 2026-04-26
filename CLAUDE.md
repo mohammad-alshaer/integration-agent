@@ -2,7 +2,7 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** M1 W4-D complete + M2-prep refactor landed (19 commits on `main`, 100 tests passing). W4-E next (real-LLM accuracy number, quota-gated). The full pipeline — graph → retry-with-error-hints → dbt emission → `dbt build` with passing tests (zero deprecation warnings), plus the golden-set scorer — is verified end-to-end offline via `scripts/smoke_graph.py` and the evals tests.
+**Current milestone:** **M1 complete** (tag `m1-complete` on `57573f5`). First real-LLM accuracy number on AdventureWorks landed 2026-04-26 against Gemini 2.5 Flash paid tier-1: **65.8% exact match (inclusive)** / **83.3% exact (exclusive of disputed)** on 38 golden targets. RENAME 25/30 exact (83%); DERIVED 0/8 exact (5 mismatch + 2 missing + 1 sql_semantic — model picks RENAME for arithmetic, plus disputed XML demographics get UNSUPPORTED_IN_M1). 19 commits on `main`, 100 tests passing. M2 next.
 
 **Canonical plan:** `C:\Users\mfalshaer\.claude\plans\i-want-to-do-jiggly-yeti.md` — read this before any non-trivial work. Always edit the plan incrementally when scope shifts; don't drift silently.
 
@@ -227,36 +227,39 @@ df0a8ae  M0 Day 4 scaffolding: Gemini + Langfuse ready for API keys
 2df890d  M0 Day 1: scaffold
 ```
 
-Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`.
+Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `57573f5`.
 
 ---
 
 ## What's left — pick up here in the new context window
 
-### W4-E: first accuracy number  ⏭️ DO THIS NEXT (QUOTA-GATED)
+M1 is shipped. Next-up is M2. The candidate work, ordered by ROI for the portfolio:
 
-Run the real-LLM eval against Gemini 2.5 Flash once:
-- **Option A (free):** wait ~24h for the 20-req/day reset. Then `python -m evals run --pair adventureworks --provider gemini --model gemini-2.5-flash`.
-- **Option B (cheap):** add Google AI Studio billing for tier-1 rate limits (1000 RPM on Flash; a full M1 eval of ~40 mappings × 2 LLM calls each = ~80 calls, well under $0.30).
-- **Option C (alt):** swap provider to Claude Haiku 4.5 — ~15-line `ClaudeProvider` class implementing `LLMClient`; higher rate limits; ~$0.10/run.
+### M2 entry-points (pick one)
 
-Produces `benchmarks/adventureworks/out/eval_report.json` with:
-- overall `exact_match` + `pattern_match` + `sql_semantic_match` rates (inclusive + exclusive of `disputed`)
-- per-pattern breakdown (RENAME / CONCAT / DERIVED)
-- prompt-cache hit rate
-- tokens + estimated $/mapping
-- `unsupported_in_m1` gap count
+1. **Lift DERIVED accuracy.** Biggest gap in the W4-E numbers (0/8 exact). Root causes observed:
+   - Pattern Classifier picks RENAME for arithmetic columns (`ExtendedAmount`, `DiscountAmount`). Fix: stronger classifier prompt + few-shot examples that contrast `LineTotal` (rename) vs `UnitPrice * OrderQty` (derived).
+   - Generator emits SQL Server-specific casts (`CAST(x AS money)`) which DuckDB rejects. Fix: dialect-aware prompt instructing the generator to emit DuckDB-compatible types (DECIMAL(19,4) instead of MONEY, etc.).
+   - Multi-source-table arithmetic (TaxAmt, Freight pro-rate) goes to `_unmodeled_multi_source.txt`. Fix: extend `dbt_emit/model.py` to emit JOINs.
 
-Separately verify:
-```bash
-./.venv/Scripts/python.exe -m dbt.cli.main build --project-dir benchmarks/adventureworks/out/dbt --profiles-dir benchmarks/adventureworks/out/dbt
-```
-Then tag:
-```bash
-git tag m1-complete -m "M1 complete — first accuracy number on AdventureWorks"
-```
+2. **Commutative-arg sorting in `normalize_sql`** for richer SQL_SEMANTIC matches. Modest lift; CONCAT_WS isn't commutative so the value is mostly for arithmetic / COALESCE.
 
-**M1 target accuracy (revised for Flash):** 35-55% exact match on first hot-cache run. Lower is fine; the number exists to measure M2 improvement, not to impress.
+3. **DuckDB-executed SQL equivalence** as a 4th match level — actually run `expected_sql` and `actual_sql` against the sandbox and compare result sets. Bigger lift; truer "semantic" check.
+
+4. **dbt-build-pass-rate as a scorer metric.** The W4-E run got 6/10 models building clean (failures: LLM-picked tables outside the sample set + SQL Server `money` type). Promote that ratio to a first-class scorer field; would tell us how much of the LLM's output is materially deployable, separate from accuracy-vs-golden.
+
+5. **`ClaudeProvider`** (~15 LoC). Quota-independent fallback; lets us A/B Flash vs Haiku 4.5 vs Sonnet 4.6 on the same golden set.
+
+6. **Re-run W4-E with `--no-rebuild-index`** to populate the prompt-hash cache and observe second-run cost (should be near-zero). Currently the report shows `prompt_cache_hit_rate=0.0, tokens_in_total=0` — the LLMClient's cache + cost telemetry isn't wired to Gemini SDK responses; that's a small fix.
+
+### W4-E observed cost + behavior — pin for next session
+
+- **Run wall-clock:** ~9 min total (38 matcher + 38 classifier + 36 generator + 1 retry, sequential through the graph).
+- **Per-call latency:** matcher ~5-8s steady (peaked at 22s on first call before embedding cache warmed); classifier ~3s (smaller prompt).
+- **Cost:** real $/run unknown — telemetry not wired. Estimate stands at ~$0.20-0.30. Watch the AI Studio billing dashboard.
+- **Validator pass rate:** 22/36 (61%) first pass, 22/36 after retry (the retry fired on `ExtendedAmount` and the LLM emitted the same `CAST(... AS money)` again — retry-with-error-hints loop is wired but the hint isn't strong enough to override SQL Server muscle memory).
+- **dbt build (separately verified):** PASS=6 WARN=0 ERROR=4 out of 10 models. WARN=0 confirms the W4-D + `data_tests:` deprecation fixes hold under real-LLM-emitted SQL.
+- **`benchmarks/adventureworks/out/eval_report.json`** is gitignored but preserved on disk; reference for any M2 baseline.
 
 ---
 
