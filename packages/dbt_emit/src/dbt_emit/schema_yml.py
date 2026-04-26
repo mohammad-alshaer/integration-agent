@@ -22,8 +22,8 @@ def _tests_for_spec(spec: MappingSpec) -> list[object]:
     out: list[object] = []
     for t in spec.tests:
         if t.config:
-            # accepted_values etc: {test_name: {config...}}
-            out.append({t.name: t.config})
+            # dbt 1.10+ requires generic-test args nested under `arguments:` (was top-level pre-1.10).
+            out.append({t.name: {"arguments": dict(t.config)}})
         else:
             out.append(t.name)
     return out

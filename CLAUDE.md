@@ -2,7 +2,7 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** M1 W4-C complete (16 commits on `main`, 100 tests passing). W4-D next. The full pipeline — graph → retry-with-error-hints → dbt emission → `dbt build` with passing tests, plus the golden-set scorer — is verified end-to-end offline via `scripts/smoke_graph.py` and the evals tests.
+**Current milestone:** M1 W4-D complete (17 commits on `main`, 100 tests passing). W4-E next (real-LLM accuracy number, quota-gated). The full pipeline — graph → retry-with-error-hints → dbt emission → `dbt build` with passing tests (zero deprecation warnings), plus the golden-set scorer — is verified end-to-end offline via `scripts/smoke_graph.py` and the evals tests.
 
 **Canonical plan:** `C:\Users\mfalshaer\.claude\plans\i-want-to-do-jiggly-yeti.md` — read this before any non-trivial work. Always edit the plan incrementally when scope shifts; don't drift silently.
 
@@ -204,7 +204,8 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
-9f447bb  M1 W4-C: evals package + golden set + scorer + runner              (100 tests)
+<pending> M1 W4-D: dbt accepted_values deprecation fix + CLAUDE.md refresh   (100 tests)
+c341760  M1 W4-C: evals package + golden set + scorer + runner              (100 tests)
 43b4360  M1 W4-B: dbt_emit package + dbt-duckdb build verification          (79 tests)
 93379ff  M1 W4-A: DuckDB sandbox validator + retry-with-error-hints loop    (70 tests)
 bb09763  Refresh CLAUDE.md for end-of-W3 state
@@ -230,13 +231,7 @@ Tags: `m0-complete` on `afb7c6d`.
 
 ## What's left — pick up here in the new context window
 
-### W4-D: docs + tag  ⏭️ DO THIS NEXT
-
-- Fix the dbt `accepted_values` deprecation: in `packages/dbt_emit/src/dbt_emit/schema_yml.py`, wrap test configs under `arguments:` instead of top-level. Small change; kills the current `MissingArgumentsPropertyInGenericTestDeprecation` warning.
-- Refresh CLAUDE.md one more time with W4-C landed (this file's "What's left" shrinks).
-- Tag: `git tag m1-code-complete -m "M1 code-complete; real-LLM accuracy number pending"`.
-
-### W4-E: first accuracy number  ⏳ QUOTA-GATED
+### W4-E: first accuracy number  ⏭️ DO THIS NEXT (QUOTA-GATED)
 
 Run the real-LLM eval against Gemini 2.5 Flash once:
 - **Option A (free):** wait ~24h for the 20-req/day reset. Then `python -m evals run --pair adventureworks --provider gemini --model gemini-2.5-flash`.
@@ -265,11 +260,10 @@ git tag m1-complete -m "M1 complete — first accuracy number on AdventureWorks"
 
 ## Known-to-carry-over gotchas for the next session
 
-1. **W4-B left an open accepted_values deprecation warning.** dbt 1.11 wants test configs under `arguments:` instead of top-level. Still passes; fix in W4-D.
-2. **`packages/dbt_emit/src/dbt_emit/schema_yml.py` uses `# noqa: PLC2701`** to import "private" helpers from `model.py` (the `_model_name`, `_snake`, etc. underscore-prefixed functions). Refactor target for M2: move those into `dbt_emit/_parsing.py`.
-3. **`scripts/smoke_graph.py` subprocess-runs `dbt build`.** If that's flaky, check the sandbox DuckDB file — the Parquet temp dir must outlive the `dbt build` call (we keep it alive inside a single `try:` block, cleanup in `finally:`).
-4. **W3 left an observation that Gemini's embedding free tier is also tight** (~100 req/min + 100-request aggregate bucket that fills fast). `GeminiEmbedder` has `inter_batch_delay_sec=1.0` to smooth this.
-5. The filtered real-LLM run at end of W3 (`tmp/profiles/mappings_dimcustomer.json`) produced 0 specs because we blew the daily Gemini Flash quota during the run's matcher/classifier calls. That run's shape proved graceful degradation works (un-enriched targets kept `UNKNOWN`, classifier failures mapped to `UNSUPPORTED_IN_M1`). Nothing broken; just waiting on quota for a clean rerun.
+1. **`packages/dbt_emit/src/dbt_emit/schema_yml.py` uses `# noqa: PLC2701`** to import "private" helpers from `model.py` (the `_model_name`, `_snake`, etc. underscore-prefixed functions). Refactor target for M2: move those into `dbt_emit/_parsing.py`.
+2. **`scripts/smoke_graph.py` subprocess-runs `dbt build`.** If that's flaky, check the sandbox DuckDB file — the Parquet temp dir must outlive the `dbt build` call (we keep it alive inside a single `try:` block, cleanup in `finally:`).
+3. **W3 left an observation that Gemini's embedding free tier is also tight** (~100 req/min + 100-request aggregate bucket that fills fast). `GeminiEmbedder` has `inter_batch_delay_sec=1.0` to smooth this.
+4. The filtered real-LLM run at end of W3 (`tmp/profiles/mappings_dimcustomer.json`) produced 0 specs because we blew the daily Gemini Flash quota during the run's matcher/classifier calls. That run's shape proved graceful degradation works (un-enriched targets kept `UNKNOWN`, classifier failures mapped to `UNSUPPORTED_IN_M1`). Nothing broken; just waiting on quota for a clean rerun.
 
 ---
 

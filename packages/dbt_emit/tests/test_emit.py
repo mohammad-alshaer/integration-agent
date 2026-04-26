@@ -160,8 +160,13 @@ class TestSchemaYml:
         person_model = models["stg_dim_customer_from_person_person"]
         cols = {c["name"]: c for c in person_model["columns"]}
         epc = cols["EmailPromotionCategory"]
-        # Test declared with config => rendered as dict
-        assert any(isinstance(t, dict) and "accepted_values" in t for t in epc.get("tests", []))
+        # dbt 1.10+ requires generic-test args under `arguments:`.
+        accepted = next(
+            t["accepted_values"]
+            for t in epc.get("tests", [])
+            if isinstance(t, dict) and "accepted_values" in t
+        )
+        assert accepted == {"arguments": {"values": ["None", "Other"]}}
 
     def test_not_null_and_unique_on_business_key(
         self, tmp_path: Path, canned_specs: list[MappingSpec]
