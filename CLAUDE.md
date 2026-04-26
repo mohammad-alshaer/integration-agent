@@ -218,7 +218,7 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
-<pending> M2.1.x: revert classifier disambiguation bullet + document findings (108 tests)
+6449d6f  M2.1.x: revert classifier disambiguation bullet + document retrieval blockers (108 tests)
 0887f75  Fill in m2.1-complete tag hash + CLAUDE.md refresh hash             (108 tests)
 492afa7  Refresh CLAUDE.md for M2.1-complete state                         (108 tests)
 4346c93  M2.1: Lift accuracy 65.8% -> 71.1% via prompt + retrieval + multi-acceptable goldens (108 tests)
