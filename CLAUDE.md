@@ -4,7 +4,9 @@ Multi-agent AI system that automates schema mapping + dbt-model generation for d
 
 **Current milestone:** **M1 complete** (tag `m1-complete`). Real-LLM accuracy number landed against Gemini 2.5 Flash (paid tier-1) on AdventureWorks: **65.8% inclusive / 83.3% exclusive** exact match, **72.6% validator pass rate**, **9/10 dbt models build clean**. 24+ commits on `main`, 104 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Three eval re-runs converged on the same accuracy number even after prompt + dialect-translator fixes — DERIVED 0/8 is the M2 target. Total session LLM spend: ~$0.32 of the $3 cap (most via prompt-hash cache).
 
-**Canonical plan:** `C:\Users\mfalshaer\.claude\plans\i-want-to-do-jiggly-yeti.md` — read this before any non-trivial work. Always edit the plan incrementally when scope shifts; don't drift silently.
+**M2 starts here:** Read the "What's left — M2 entry-points" section at the bottom of this file. **M2.1 (lift DERIVED accuracy) is the highest-ROI starting point** and the gap is well-characterized by the run #3 eval report on disk at `benchmarks/adventureworks/out/eval_report.json` (gitignored but preserved). Compare any M2 attempt against the M1 baseline: 65.8% inclusive / 83.3% exclusive exact match, 0/8 DERIVED exact.
+
+**Canonical M1 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\i-want-to-do-jiggly-yeti.md` — describes the M1 scope; useful context but M1 is shipped. Write a new plan file for M2 work; don't edit the M1 one.
 
 **Session memory:** `C:\Users\mfalshaer\.claude\projects\C--Users-mfalshaer-Desktop-PythonProjects-Integration-Agent\memory\` — read `MEMORY.md` for the index of user/feedback/project/reference notes.
 
@@ -19,18 +21,19 @@ Mohammad's Dar-managed Windows 11 PC has hard policies. Ignoring them will cost 
 | `uv` binary (installs to `.local\bin\`, not whitelisted) | Python's built-in `venv` + `pip`. Already set up at `.venv/`. |
 | Docker Desktop / WSL / Podman | **DuckDB + `vss` extension** as unified metadata + vector store (supersedes Postgres+pgvector from the original plan). See ADR 0002. |
 | pre-commit hook `.exe` wrappers (unsigned) | Run `ruff` manually from `.venv`. pre-commit will run in CI when a GitHub remote is added (M3+). |
-| PowerShell (corporate restrictions on user-installed exes) | Use Git Bash; invoke `cmd //c "..."` when cmd-specific semantics needed. |
+| PowerShell (corporate restrictions + Kaspersky blocks on user-installed exes) | Order of preference: **Bash tool (Git Bash) > `cmd //c "..."` from Bash > PowerShell as last resort.** Mohammad reinforced this 2026-04-26: PS is most likely to be blocked by Kaspersky's process heuristics. |
 | Python default TLS (certifi bundle doesn't trust corporate CA) | **`truststore.inject_into_ssl()` at top of any script making HTTPS calls**, before any HTTPS client is constructed. Already wired into every script + `apps/worker/src/worker/cli.py`. |
 | Gemini 2.5 Pro free tier (quota = 0 on this account) | Use `gemini-2.5-flash`. `.env.example` defaults to Flash. |
 | **Gemini 2.5 Flash free tier = 20 requests per DAY** (hard cap — not per-minute) | Prompt-hash cache is the #1 defense — repeated runs burn ~0 quota on unchanged prompts. For full-scale eval runs: (a) wait for daily reset, (b) add Google AI Studio billing (~$0.30/full eval on Flash tier-1 at 1000 RPM), or (c) swap provider via `LLMClient` (a ~15-line `ClaudeProvider` would cost ~$0.10/run on Haiku 4.5). |
 | **Gemini embedding free tier ~100 req/min** (not obvious from docs) | `GeminiEmbedder` has `inter_batch_delay_sec=1.0` by default + exponential retry up to 32s. |
 | Voyage embeddings without a payment method (hard cap: 3 RPM / 10K TPM) | **Default embedder is Gemini, not Voyage.** Set `EMBEDDING_PROVIDER=voyage` only if a payment method is on file. |
 
-**Bash sandbox quirks** (separate from AppLocker — it's the Claude tool shell's allowlist): `cat`, `wc`, `head`, `grep`, `tail`, `mkdir` are blocked. Workarounds:
-- `git commit -m "..." -m "..."` multi-flag instead of HEREDOCs.
+**Bash sandbox quirks** (separate from AppLocker — it's the Claude tool shell's allowlist):
+- Some core utils (`cat`, `wc`, `mkdir`) may be blocked depending on the harness version. As of 2026-04-26 `tail`, `head`, `grep` work in piped commands. If a util fails with "Permission denied", fall back to dedicated tools (Read/Write/Glob/Grep) or to `cmd //c "..."`.
+- `git commit -m "..." -m "..."` multi-flag instead of HEREDOCs (HEREDOC-with-cat is unreliable).
 - Use the Write tool for file content, never `echo >` or `cat <<EOF`.
-- Skip pipes to `head`/`tail`/`grep`; run the command raw.
-- Use Python for `mkdir` (or Write tool implicit parent creation).
+- Use Python or the Write tool for `mkdir` (Write creates parents implicitly).
+- The `Grep` tool is dramatically faster than shelling out to `rg`/`grep`; prefer it for searches.
 
 **What works:** Python (whitelisted), `.venv/Scripts/*` binaries, SQL Server 2025 Developer Edition (instance `SQLDEV2025`) via ODBC Driver 18 with Windows auth, DuckDB in-process, Git, pip (recent pip auto-uses truststore), Voyage/Google embeddings via `truststore`.
 
@@ -51,7 +54,7 @@ Mohammad's Dar-managed Windows 11 PC has hard policies. Ignoring them will cost 
 
 ---
 
-## Repo layout (end of W4-C)
+## Repo layout (M1-complete)
 
 ```
 Integration-Agent/
@@ -121,14 +124,14 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 # Lint + format + tests (run manually — pre-commit is dropped on this machine)
 ./.venv/Scripts/python.exe -m ruff check .
 ./.venv/Scripts/python.exe -m ruff format .
-./.venv/Scripts/python.exe -m pytest packages/ -v    # 100 tests at end of W4-C
+./.venv/Scripts/python.exe -m pytest packages/ -q    # 104 tests at M1-complete
 
 # Smoke tests (all green; smoke_graph.py in particular is the offline DoD)
 ./.venv/Scripts/python.exe scripts/check_sqlserver.py
 ./.venv/Scripts/python.exe scripts/verify_adventureworks.py
 ./.venv/Scripts/python.exe scripts/check_duckdb.py
 ./.venv/Scripts/python.exe scripts/smoke_graph.py     # FakeLLM e2e: graph + retry + dbt build
-./.venv/Scripts/python.exe scripts/hello_gemini.py    # 1 LLM call (watch quota)
+./.venv/Scripts/python.exe scripts/hello_gemini.py    # 1 LLM call (Flash paid tier — cheap)
 ./.venv/Scripts/python.exe scripts/smoke_embeddings.py # Gemini embedding quota
 
 # Profile a database -> SchemaProfile JSON
@@ -136,24 +139,31 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
   --db AdventureWorks2022 --role source --out ./tmp/profiles/aw2022.json \
   [--no-enrich] [--no-include-samples] [--rate-limit-delay 6.5]
 
-# Run the mapping graph (real LLM — watch the 20-req/day Gemini Flash cap)
+# Run the mapping graph for a single target table (real LLM — Flash paid tier-1 in use)
 ./.venv/Scripts/python.exe -m worker run \
-  --source-profile ./tmp/profiles/aw2022.json \
+  --source-profile ./tmp/profiles/aw2022_filtered.json \
   --target-profile ./tmp/profiles/awdw2022.json \
   --target-table dbo.DimCustomer \
   --sample-dir benchmarks/adventureworks/samples \
-  --rebuild-index --rate-limit-delay 6.5 \
+  --rebuild-index --rate-limit-delay 0.5 \
   --out ./tmp/profiles/mappings_dimcustomer.json
 
-# dbt build verification (W4-B) — run against the emitted project
+# dbt build against the emitted project (after a full eval run)
 ./.venv/Scripts/python.exe -m dbt.cli.main build \
   --project-dir benchmarks/adventureworks/out/dbt \
   --profiles-dir benchmarks/adventureworks/out/dbt \
   --target dev
 
-# Eval harness — produces the accuracy-number JSON report (quota-gated for real LLM; use --provider fake offline)
-./.venv/Scripts/python.exe -m evals run \
-  --pair adventureworks --provider gemini --model gemini-2.5-flash
+# Eval harness — single command (no `run` subcommand). Produces eval_report.json.
+# All cache hits = ~$0; cold cache = ~$0.30 on Flash paid tier-1.
+./.venv/Scripts/python.exe -m evals \
+  --pair adventureworks --provider gemini --model gemini-2.5-flash \
+  --source-profile tmp/profiles/aw2022_filtered.json \
+  --target-profile tmp/profiles/awdw2022.json \
+  --rebuild-index --rate-limit-delay 0.5
+
+# Re-emit + dbt build from a cached eval report (no LLM cost; reconstructs MappingSpecs from eval_report.json)
+# See the inline pattern used at end-of-M1; consider promoting to a `scripts/dbt_build_from_report.py` if reused.
 ```
 
 ---
@@ -187,11 +197,11 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 - Don't rely on real-LLM runs in pytest — prompt-hash cache makes them free on re-run but first-run quota burn is real.
 
 **Git workflow:**
-- Milestone commits = multiple-letter sub-milestones (e.g. `M1 W4-A`). Each sub-milestone is a single commit. Commit messages use multiple `-m` flags (Bash sandbox blocks HEREDOC-with-cat).
+- Milestone commits = multiple-letter sub-milestones (e.g. `M2.1 ...`). Each sub-milestone is a single commit. Commit messages use multiple `-m` flags (Bash sandbox blocks HEREDOC-with-cat).
 - Every commit ends with `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
-- Milestones tagged: `m0-complete`, planned `m1-code-complete` (end of W4-D) and `m1-complete` (after W4-E real-LLM accuracy number lands).
-- Branch: `main` (renamed locally from `master`; no global git config changes).
-- No pushes yet — no remote configured.
+- Milestones tagged: `m0-complete` (`afb7c6d`), `m1-code-complete` (`66db0a1`), `m1-complete` (`894ac59`).
+- Branch: `main`. **Remote configured: `origin → https://github.com/mohammad-alshaer/integration-agent` (public).** Push with `git push origin main && git push origin --tags`.
+- When self-referencing a hash in a doc that hasn't been committed yet, write `<pending>` and fill in via a small follow-up "Refresh" commit (this is a known cosmetic drift; harmless).
 
 **Code style:**
 - ruff enforces: line-length 100, select=`["E","F","I","W","B","UP","SIM"]`, ignore=`["E501","B008"]` (B008 ignored — typer's `typer.Option(...)` defaults are safe).
@@ -204,7 +214,8 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
-<pending> Refresh CLAUDE.md for M1-complete state                            (104 tests)
+45c9fb8  Refresh CLAUDE.md for M1-complete state                            (104 tests)
+<pending> Hand-off CLAUDE.md polish for fresh M2 session                    (104 tests)
 894ac59  Translate SQL Server types to DuckDB equivalents in Rename CAST    (104 tests)
 96e8c1c  Lift accuracy: DuckDB dialect hint in DERIVED + classifier few-shot (103 tests)
 4b4b402  Wire Gemini usage_metadata into LLMClient + EvalReport telemetry   (103 tests)
@@ -283,7 +294,9 @@ Telemetry now reports tokens; per-provider price tables would convert that to do
 
 ## When in doubt
 
-1. Re-read the plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md`.
-2. Check `MEMORY.md` for project/feedback notes.
-3. For DataOps concept questions or Claude-specific how-tos, ask Mohammad — he's a new-grad, so explain foundational concepts (eval, RAG, dbt, embeddings, LangGraph state machines, etc.) with a concrete example tied to the current task. Don't just name-drop.
-4. Mohammad prefers free/free-tier solutions; surface cost estimates upfront on any paid-service decision.
+1. **For M2 work:** start with the "What's left — M2 entry-points" section above. Compare any change against the M1 baseline numbers in `benchmarks/adventureworks/out/eval_report.json`.
+2. **For project history:** the historical M1 plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md` is reference-only.
+3. **Memory:** check `MEMORY.md` for project/feedback notes about Mohammad's preferences and corporate environment specifics.
+4. **For DataOps / Claude-specific concept questions**, explain foundational concepts (eval, RAG, dbt, embeddings, LangGraph state machines, etc.) with a concrete example tied to the current task. Mohammad is a new-grad — don't just name-drop.
+5. **Cost discipline:** Mohammad prefers free/free-tier solutions; surface cost estimates upfront on any paid-service decision. Gemini Flash paid tier-1 is already configured (~$0.30/full eval; cache makes re-runs nearly free).
+6. **Before any GitHub push:** verify no secrets in the diff. The repo is **public**; anything pushed is permanently visible.
