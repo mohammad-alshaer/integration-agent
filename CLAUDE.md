@@ -218,7 +218,7 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
-<pending> Refresh CLAUDE.md for M2.2-complete state                         (114 tests)
+1fab32e  Refresh CLAUDE.md for M2.2-complete state                         (114 tests)
 fc83c60  M2.2: Lift accuracy 71.1% -> 73.7% via target enrichment + multi-source JOIN infrastructure (114 tests)
 f31f7b3  Fill in M2.1.x commit hash in CLAUDE.md log                          (108 tests)
 6449d6f  M2.1.x: revert classifier disambiguation bullet + document retrieval blockers (108 tests)
