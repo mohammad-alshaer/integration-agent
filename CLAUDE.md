@@ -2,7 +2,7 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** **M1 complete** (tag `m1-complete` on `57573f5`). First real-LLM accuracy number on AdventureWorks landed 2026-04-26 against Gemini 2.5 Flash paid tier-1: **65.8% exact match (inclusive)** / **83.3% exact (exclusive of disputed)** on 38 golden targets. RENAME 25/30 exact (83%); DERIVED 0/8 exact (5 mismatch + 2 missing + 1 sql_semantic — model picks RENAME for arithmetic, plus disputed XML demographics get UNSUPPORTED_IN_M1). 19 commits on `main`, 100 tests passing. M2 next.
+**Current milestone:** **M1 complete** (tag `m1-complete`). Real-LLM accuracy number landed against Gemini 2.5 Flash (paid tier-1) on AdventureWorks: **65.8% inclusive / 83.3% exclusive** exact match, **72.6% validator pass rate**, **9/10 dbt models build clean**. 24+ commits on `main`, 104 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Three eval re-runs converged on the same accuracy number even after prompt + dialect-translator fixes — DERIVED 0/8 is the M2 target. Total session LLM spend: ~$0.32 of the $3 cap (most via prompt-hash cache).
 
 **Canonical plan:** `C:\Users\mfalshaer\.claude\plans\i-want-to-do-jiggly-yeti.md` — read this before any non-trivial work. Always edit the plan incrementally when scope shifts; don't drift silently.
 
@@ -204,7 +204,13 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
-<pending> Refresh CLAUDE.md for end-of-W4-D + M2-prep state
+<pending> Refresh CLAUDE.md for M1-complete state                            (104 tests)
+894ac59  Translate SQL Server types to DuckDB equivalents in Rename CAST    (104 tests)
+96e8c1c  Lift accuracy: DuckDB dialect hint in DERIVED + classifier few-shot (103 tests)
+4b4b402  Wire Gemini usage_metadata into LLMClient + EvalReport telemetry   (103 tests)
+6b4d4b9  Rewrite README for M1-complete state
+57573f5  Rename schema.yml 'tests:' key to 'data_tests:' for dbt 1.10+ compat (100 tests)
+706dc8c  Refresh CLAUDE.md for end-of-W4-D + M2-prep state                  (100 tests)
 1a24ebe  Refactor: extract dbt_emit parsing helpers into _parsing.py        (100 tests)
 66db0a1  M1 W4-D: dbt accepted_values deprecation fix + CLAUDE.md refresh   (100 tests)
 c341760  M1 W4-C: evals package + golden set + scorer + runner              (100 tests)
@@ -227,39 +233,41 @@ df0a8ae  M0 Day 4 scaffolding: Gemini + Langfuse ready for API keys
 2df890d  M0 Day 1: scaffold
 ```
 
-Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `57573f5`.
+Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59` (latest).
+Public repo: https://github.com/mohammad-alshaer/integration-agent — first push landed mid-session.
 
 ---
 
-## What's left — pick up here in the new context window
+## What's left — M2 entry-points
 
-M1 is shipped. Next-up is M2. The candidate work, ordered by ROI for the portfolio:
+M1 is shipped + tagged + pushed. M2 starts here. Ordered by impact-to-effort:
 
-### M2 entry-points (pick one)
+### M2.1 — Lift DERIVED accuracy (highest ROI)
 
-1. **Lift DERIVED accuracy.** Biggest gap in the W4-E numbers (0/8 exact). Root causes observed:
-   - Pattern Classifier picks RENAME for arithmetic columns (`ExtendedAmount`, `DiscountAmount`). Fix: stronger classifier prompt + few-shot examples that contrast `LineTotal` (rename) vs `UnitPrice * OrderQty` (derived).
-   - Generator emits SQL Server-specific casts (`CAST(x AS money)`) which DuckDB rejects. Fix: dialect-aware prompt instructing the generator to emit DuckDB-compatible types (DECIMAL(19,4) instead of MONEY, etc.).
-   - Multi-source-table arithmetic (TaxAmt, Freight pro-rate) goes to `_unmodeled_multi_source.txt`. Fix: extend `dbt_emit/model.py` to emit JOINs.
+DERIVED is 0/8 exact in the M1 number. Three failure clusters from run #3 diagnosis:
+- **2 stylistic alternatives** (`ExtendedAmount`, `SalesAmount`): classifier picks the persisted-computed source (`LineTotal`) which is semantically equivalent to the golden's primitive arithmetic. Either re-author the golden to accept this style, or add anti-stylistic few-shot to override.
+- **1 genuinely wrong** (`DiscountAmount`): classifier picks `UnitPriceDiscount` alone (a percentage) instead of the arithmetic `UnitPrice * UnitPriceDiscount * OrderQty`. Sharper few-shot or a column-name heuristic.
+- **4 UNSUPPORTED_IN_M1** (`TaxAmt`, `Freight`, `BirthDate`, `YearlyIncome`, `EmailAddress`, `DateFirstPurchase`): genuinely beyond M1 scope (multi-table allocations, XML shredding, aggregations, cross-table lookups). Each is a new pattern + generator.
 
-2. **Commutative-arg sorting in `normalize_sql`** for richer SQL_SEMANTIC matches. Modest lift; CONCAT_WS isn't commutative so the value is mostly for arithmetic / COALESCE.
+### M2.2 — Multi-source-table DERIVED + JOIN modeling
 
-3. **DuckDB-executed SQL equivalence** as a 4th match level — actually run `expected_sql` and `actual_sql` against the sandbox and compare result sets. Bigger lift; truer "semantic" check.
+The `_unmodeled_multi_source.txt` sidecar pattern in `packages/dbt_emit/src/dbt_emit/model.py` punts on multi-source specs. Extending it to emit JOIN-aware dbt models unlocks `FactInternetSales.TaxAmt`/`Freight` (and probably half a dozen more).
 
-4. **dbt-build-pass-rate as a scorer metric.** The W4-E run got 6/10 models building clean (failures: LLM-picked tables outside the sample set + SQL Server `money` type). Promote that ratio to a first-class scorer field; would tell us how much of the LLM's output is materially deployable, separate from accuracy-vs-golden.
+### M2.3 — DuckDB-executed SQL equivalence (4th match level)
 
-5. **`ClaudeProvider`** (~15 LoC). Quota-independent fallback; lets us A/B Flash vs Haiku 4.5 vs Sonnet 4.6 on the same golden set.
+Currently `SQL_SEMANTIC` only checks "does the normalized SQL contain every expected source column name?" — a token-level proxy. Real semantic equivalence: run both the expected and actual SQL against the sandbox and compare result sets. Bigger lift; truer signal.
 
-6. **Re-run W4-E with `--no-rebuild-index`** to populate the prompt-hash cache and observe second-run cost (should be near-zero). Currently the report shows `prompt_cache_hit_rate=0.0, tokens_in_total=0` — the LLMClient's cache + cost telemetry isn't wired to Gemini SDK responses; that's a small fix.
+### M2.4 — `ClaudeProvider`
 
-### W4-E observed cost + behavior — pin for next session
+~15-line `LLMClient` impl backed by `anthropic` SDK with prompt caching. Lets us A/B Flash vs Haiku 4.5 vs Sonnet 4.6 on the same golden set without changing any other code. Useful both for cost-shopping and as portfolio evidence of provider-swappable design.
 
-- **Run wall-clock:** ~9 min total (38 matcher + 38 classifier + 36 generator + 1 retry, sequential through the graph).
-- **Per-call latency:** matcher ~5-8s steady (peaked at 22s on first call before embedding cache warmed); classifier ~3s (smaller prompt).
-- **Cost:** real $/run unknown — telemetry not wired. Estimate stands at ~$0.20-0.30. Watch the AI Studio billing dashboard.
-- **Validator pass rate:** 22/36 (61%) first pass, 22/36 after retry (the retry fired on `ExtendedAmount` and the LLM emitted the same `CAST(... AS money)` again — retry-with-error-hints loop is wired but the hint isn't strong enough to override SQL Server muscle memory).
-- **dbt build (separately verified):** PASS=6 WARN=0 ERROR=4 out of 10 models. WARN=0 confirms the W4-D + `data_tests:` deprecation fixes hold under real-LLM-emitted SQL.
-- **`benchmarks/adventureworks/out/eval_report.json`** is gitignored but preserved on disk; reference for any M2 baseline.
+### M2.5 — Commutative-arg sorting in `normalize_sql`
+
+Tiny lift, modest scope (CONCAT_WS isn't commutative; benefits mostly arithmetic + COALESCE).
+
+### M2.6 — `pipeline_dollars_total` field on EvalReport
+
+Telemetry now reports tokens; per-provider price tables would convert that to dollars. Useful for M2 cost-comparison runs.
 
 ---
 
@@ -267,8 +275,9 @@ M1 is shipped. Next-up is M2. The candidate work, ordered by ROI for the portfol
 
 1. **`scripts/smoke_graph.py` subprocess-runs `dbt build`.** If that's flaky, check the sandbox DuckDB file — the Parquet temp dir must outlive the `dbt build` call (we keep it alive inside a single `try:` block, cleanup in `finally:`).
 2. **W3 left an observation that Gemini's embedding free tier is also tight** (~100 req/min + 100-request aggregate bucket that fills fast). `GeminiEmbedder` has `inter_batch_delay_sec=1.0` to smooth this.
-3. The filtered real-LLM run at end of W3 (`tmp/profiles/mappings_dimcustomer.json`) produced 0 specs because we blew the daily Gemini Flash quota during the run's matcher/classifier calls. That run's shape proved graceful degradation works (un-enriched targets kept `UNKNOWN`, classifier failures mapped to `UNSUPPORTED_IN_M1`). Nothing broken; just waiting on quota for a clean rerun.
-4. **W4-E sample-dir is populated** (2026-04-26): `benchmarks/adventureworks/samples/` now has 17 Parquet files covering all 6 golden-source tables + FK parents. `Person.Address` failed with ODBC type `-151` (geography) and is NOT in the golden set — non-blocker; would need a `CAST(... AS varchar)` workaround in `packages/sqlserver/sample.py` if ever needed.
+3. **W4-E sample-dir** (`benchmarks/adventureworks/samples/`) has 19 Parquet files covering all 6 golden-source tables + FK parents. `Person.Address` and `HumanResources.Employee` failed sampling on ODBC type `-151` (geography/hierarchyid). Person.Address isn't on the golden path (non-blocker); `HumanResources.Employee` causes 1/10 dbt build error for the model the LLM emitted referencing it. Workaround for either: `CAST(... AS varchar)` in the SELECT inside `packages/sqlserver/src/sqlserver/sample.py` for unsupported ODBC types.
+4. **`mean_llm_confidence=1.0`** in the eval report shows the model is overconfident — never says "I'm unsure" even when it's wrong (run #3 had several mismatches all at confidence=1.0). Calibration is M2-territory; needs prompt-engineered uncertainty.
+5. **`tokens_in_total=0` + `prompt_cache_hit_rate=0%` per-spec** in the run #3 report is correct (run #3 was 100% cache hit) but misleading at first glance. The pipeline-level fields (`pipeline_total_llm_calls`, `pipeline_total_tokens_in/out`, `pipeline_cache_hit_rate`) tell the honest story; the per-spec fields only fire on cold runs.
 
 ---
 
