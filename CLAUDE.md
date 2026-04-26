@@ -218,7 +218,7 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
-<pending> Refresh CLAUDE.md for M2.1-complete state                         (108 tests)
+492afa7  Refresh CLAUDE.md for M2.1-complete state                         (108 tests)
 4346c93  M2.1: Lift accuracy 65.8% -> 71.1% via prompt + retrieval + multi-acceptable goldens (108 tests)
 0c7c498  Polish CLAUDE.md hand-off for fresh M2 session                     (104 tests)
 45c9fb8  Refresh CLAUDE.md for M1-complete state                            (104 tests)
@@ -250,7 +250,7 @@ df0a8ae  M0 Day 4 scaffolding: Gemini + Langfuse ready for API keys
 2df890d  M0 Day 1: scaffold
 ```
 
-Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1-complete` on `<pending>` (latest).
+Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1-complete` on `4346c93` (latest).
 Public repo: https://github.com/mohammad-alshaer/integration-agent — first push landed mid-M1 session.
 
 ---
