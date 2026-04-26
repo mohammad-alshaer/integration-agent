@@ -156,6 +156,10 @@ def score(
     provider: str,
     model: str,
     run_id: str,
+    pipeline_total_llm_calls: int = 0,
+    pipeline_total_tokens_in: int = 0,
+    pipeline_total_tokens_out: int = 0,
+    pipeline_cache_hit_rate: float | None = None,
 ) -> EvalReport:
     actual_by_fqn: dict[str, MappingSpec] = {s.target_fqn: s for s in actual_specs}
 
@@ -243,6 +247,10 @@ def score(
         prompt_cache_hit_rate=prompt_cache_hit_rate,
         tokens_in_total=tokens_in_total,
         tokens_out_total=tokens_out_total,
+        pipeline_total_llm_calls=pipeline_total_llm_calls,
+        pipeline_total_tokens_in=pipeline_total_tokens_in,
+        pipeline_total_tokens_out=pipeline_total_tokens_out,
+        pipeline_cache_hit_rate=pipeline_cache_hit_rate,
         entries=entries,
     )
 

@@ -76,7 +76,13 @@ def set_cached(key: str, value: dict) -> None:
 
 
 class GeminiProvider:
-    """Google Gemini via the `google-genai` SDK. M1 default provider."""
+    """Google Gemini via the `google-genai` SDK. M1 default provider.
+
+    Telemetry: every call updates `.last_tokens_in/out/cache_hit` (single most recent
+    call) and `.total_tokens_in/out/calls/cache_hits` (running sums for the run).
+    Read these after `.structured()` returns to attach per-spec telemetry, or at
+    end-of-run to populate aggregate cost reports.
+    """
 
     provider = "gemini"
 
@@ -91,11 +97,29 @@ class GeminiProvider:
                 "GEMINI_API_KEY is not set. Copy .env.example to .env and fill it in."
             )
         self._client = genai.Client(api_key=api_key)
+        self.last_tokens_in: int = 0
+        self.last_tokens_out: int = 0
+        self.last_cache_hit: bool = False
+        self.total_tokens_in: int = 0
+        self.total_tokens_out: int = 0
+        self.total_calls: int = 0
+        self.total_cache_hits: int = 0
+
+    def _record(self, tokens_in: int, tokens_out: int, cache_hit: bool) -> None:
+        self.last_tokens_in = tokens_in
+        self.last_tokens_out = tokens_out
+        self.last_cache_hit = cache_hit
+        self.total_tokens_in += tokens_in
+        self.total_tokens_out += tokens_out
+        self.total_calls += 1
+        if cache_hit:
+            self.total_cache_hits += 1
 
     def structured(self, system: str, user: str, schema: type[T]) -> T:
         key = prompt_cache_key(self.provider, self.model, system, user, schema.__name__)
         cached = get_cached(key)
         if cached is not None:
+            self._record(0, 0, cache_hit=True)
             return schema.model_validate(cached)
 
         from google.genai import types
@@ -116,6 +140,8 @@ class GeminiProvider:
                     config=config,
                 )
                 result: T = response.parsed
+                tokens_in, tokens_out = _extract_usage(response)
+                self._record(tokens_in, tokens_out, cache_hit=False)
                 set_cached(key, result.model_dump())
                 return result
             except Exception as exc:  # noqa: BLE001
@@ -134,6 +160,16 @@ class GeminiProvider:
 
         assert last_exc is not None
         raise last_exc
+
+
+def _extract_usage(response) -> tuple[int, int]:  # noqa: ANN001 — google-genai response type
+    """Pull (prompt_tokens, completion_tokens) from a Gemini response. 0/0 on absence."""
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return 0, 0
+    prompt = getattr(usage, "prompt_token_count", 0) or 0
+    out = getattr(usage, "candidates_token_count", 0) or 0
+    return int(prompt), int(out)
 
 
 def _is_transient(exc: Exception) -> bool:

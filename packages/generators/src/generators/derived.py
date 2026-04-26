@@ -79,6 +79,7 @@ class DerivedGenerator:
             raise ValueError(f"DerivedGenerator requires at least 1 source for {ctx.target.fqn}")
 
         user_prompt = self._build_prompt(ctx)
+        llm_failed = False
         try:
             result = self._llm.structured(_SYSTEM_PROMPT, user_prompt, DerivedSpec)
         except Exception as exc:  # noqa: BLE001
@@ -92,6 +93,7 @@ class DerivedGenerator:
                 accepted_values=None,
                 confidence=0.0,
             )
+            llm_failed = True
 
         alias = column_alias(ctx.target.fqn)
         sql = f"SELECT {result.sql_expression} AS {alias}"
@@ -114,6 +116,13 @@ class DerivedGenerator:
             rationale=final_rationale,
             tests=tests,
             llm_confidence=result.confidence,
+            provider=getattr(self._llm, "provider", "unknown"),
+            model=getattr(self._llm, "model", "unknown"),
+            tokens_in=0 if llm_failed else int(getattr(self._llm, "last_tokens_in", 0) or 0),
+            tokens_out=0 if llm_failed else int(getattr(self._llm, "last_tokens_out", 0) or 0),
+            prompt_cache_hit=False
+            if llm_failed
+            else bool(getattr(self._llm, "last_cache_hit", False)),
         )
 
     def test_assertions(self, spec: MappingSpec) -> list[DbtTest]:

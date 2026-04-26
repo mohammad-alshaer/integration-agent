@@ -127,3 +127,66 @@ class TestDerivedArithmetic:
         assert "AS SalesAmount" in spec.sql
         # No accepted_values test when the response didn't provide one
         assert not [t for t in spec.tests if t.name == "accepted_values"]
+
+
+class TestDerivedTelemetry:
+    def test_propagates_last_call_telemetry_into_spec(self) -> None:
+        src = _col("Sales.SalesOrderDetail.UnitPrice", "decimal(19,4)")
+        tgt = _col("dbo.FactInternetSales.UnitPriceX", "decimal(19,4)", is_nullable=False)
+
+        class TelemetryFakeLLM:
+            provider = "fake"
+            model = "fake-1"
+            last_tokens_in = 1234
+            last_tokens_out = 56
+            last_cache_hit = False
+
+            def structured(self, system: str, user: str, schema: type):  # noqa: ARG002
+                return DerivedSpec(
+                    sql_expression="UnitPrice",
+                    rationale="passthrough",
+                    accepted_values=None,
+                    confidence=0.7,
+                )
+
+        spec = DerivedGenerator(TelemetryFakeLLM()).generate(
+            MappingProposal(
+                target_fqn=tgt.fqn,
+                source_fqns=[src.fqn],
+                pattern=Pattern.DERIVED,
+                rationale="",
+            ),
+            GenerationContext(target=tgt, sources=[src]),
+        )
+        assert spec.tokens_in == 1234
+        assert spec.tokens_out == 56
+        assert spec.prompt_cache_hit is False
+        assert spec.provider == "fake"
+        assert spec.model == "fake-1"
+
+    def test_zero_telemetry_on_llm_failure(self) -> None:
+        src = _col("t.t.src", "int")
+        tgt = _col("u.u.tgt", "varchar(50)")
+
+        class FailingFakeLLM:
+            provider = "fake"
+            model = "fake-1"
+            last_tokens_in = 999  # would propagate, but we expect 0 because the call failed
+            last_tokens_out = 999
+            last_cache_hit = True
+
+            def structured(self, system, user, schema):  # noqa: ARG002, ANN001
+                raise RuntimeError("503 transient")
+
+        spec = DerivedGenerator(FailingFakeLLM()).generate(
+            MappingProposal(
+                target_fqn=tgt.fqn,
+                source_fqns=[src.fqn],
+                pattern=Pattern.DERIVED,
+                rationale="",
+            ),
+            GenerationContext(target=tgt, sources=[src]),
+        )
+        assert spec.tokens_in == 0
+        assert spec.tokens_out == 0
+        assert spec.prompt_cache_hit is False

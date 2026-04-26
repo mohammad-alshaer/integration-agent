@@ -247,3 +247,24 @@ def test_score_aggregates_llm_confidence_and_tokens() -> None:
     assert report.prompt_cache_hit_rate == 1.0
     assert report.tokens_in_total == 100
     assert report.tokens_out_total == 50
+
+
+def test_score_pipeline_telemetry_passthrough() -> None:
+    """Pipeline-level totals (matcher + classifier + generator) flow into the report."""
+    exp = _file(_expected("dbo.T.a", Pattern.RENAME, ["s.S.a"]))
+    s = _spec("dbo.T.a", ["s.S.a"], Pattern.RENAME, "SELECT a AS a")
+    report = score(
+        exp,
+        [s],
+        provider="fake",
+        model="fake-1",
+        run_id="t1",
+        pipeline_total_llm_calls=80,
+        pipeline_total_tokens_in=240_000,
+        pipeline_total_tokens_out=40_000,
+        pipeline_cache_hit_rate=0.25,
+    )
+    assert report.pipeline_total_llm_calls == 80
+    assert report.pipeline_total_tokens_in == 240_000
+    assert report.pipeline_total_tokens_out == 40_000
+    assert report.pipeline_cache_hit_rate == 0.25

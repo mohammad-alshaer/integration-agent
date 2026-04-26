@@ -66,6 +66,14 @@ class EvalReport(BaseModel):
     mean_llm_confidence: float | None = None
     mean_validation_pass_rate: float | None = None
     prompt_cache_hit_rate: float | None = None
+    # Per-spec aggregates: sum across MappingSpecs (generator-only — Rename/Concat
+    # don't make LLM calls, so these reflect DERIVED-generator usage).
     tokens_in_total: int = 0
     tokens_out_total: int = 0
+    # Pipeline-wide aggregates from LLMClient running totals: matcher + classifier
+    # + generator + retries. The honest full-run cost number.
+    pipeline_total_llm_calls: int = 0
+    pipeline_total_tokens_in: int = 0
+    pipeline_total_tokens_out: int = 0
+    pipeline_cache_hit_rate: float | None = None
     entries: list[ScoreEntry] = Field(default_factory=list)
