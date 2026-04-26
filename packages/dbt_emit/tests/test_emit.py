@@ -160,10 +160,10 @@ class TestSchemaYml:
         person_model = models["stg_dim_customer_from_person_person"]
         cols = {c["name"]: c for c in person_model["columns"]}
         epc = cols["EmailPromotionCategory"]
-        # dbt 1.10+ requires generic-test args under `arguments:`.
+        # dbt 1.10+ requires generic-test args under `arguments:` and prefers `data_tests:`.
         accepted = next(
             t["accepted_values"]
-            for t in epc.get("tests", [])
+            for t in epc.get("data_tests", [])
             if isinstance(t, dict) and "accepted_values" in t
         )
         assert accepted == {"arguments": {"values": ["None", "Other"]}}
@@ -177,7 +177,7 @@ class TestSchemaYml:
         sales_model = models["stg_dim_customer_from_sales_customer"]
         cols = {c["name"]: c for c in sales_model["columns"]}
         ck = cols["CustomerKey"]
-        names = {t if isinstance(t, str) else next(iter(t)) for t in ck["tests"]}
+        names = {t if isinstance(t, str) else next(iter(t)) for t in ck["data_tests"]}
         assert {"not_null", "unique"} <= names
 
 

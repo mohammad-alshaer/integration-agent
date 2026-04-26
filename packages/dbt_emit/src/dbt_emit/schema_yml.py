@@ -73,7 +73,8 @@ def write_schema_yml(
             col_entry: dict = {"name": alias}
             tests = _tests_for_spec(spec)
             if tests:
-                col_entry["tests"] = tests
+                # dbt 1.10+ prefers `data_tests:` over the legacy `tests:` key.
+                col_entry["data_tests"] = tests
             columns.append(col_entry)
         models_block.append(
             {
