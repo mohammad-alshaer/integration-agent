@@ -58,10 +58,19 @@ Output rules:
     a SELECT over a CTE that already references the sources by bare name.
   - No joins. No window functions. No aggregates (GROUP BY / SUM / AVG / ...). Those belong
     to other pattern generators.
-  - Prefer ANSI SQL over dialect-specific syntax. DuckDB runs these during validation and
-    is largely ANSI-compatible; dbt-sqlserver will too in M4+.
+  - Prefer ANSI SQL over dialect-specific syntax.
+  - Do NOT include explicit CAST unless the source and target types genuinely differ.
+    A passthrough rename of a DECIMAL to a DECIMAL needs no cast.
   - If the logic is a finite-domain CASE, populate `accepted_values` with the distinct output
     strings so the eval harness can emit an `accepted_values` dbt test.
+
+DuckDB dialect constraints (the validator runs your SQL against DuckDB; SQL Server types fail):
+  - Use DECIMAL(19,4) instead of MONEY or SMALLMONEY.
+  - Use VARCHAR or TEXT instead of NVARCHAR / NCHAR / NTEXT.
+  - Use TIMESTAMP instead of DATETIME2 / SMALLDATETIME / DATETIMEOFFSET.
+  - Use DOUBLE / REAL instead of FLOAT(53) / FLOAT(24).
+  - For currency arithmetic, multiply/add at the column level. Do not wrap in CAST(... AS MONEY).
+  - For string concatenation use `||` or `concat_ws`, not `+`.
 
 Calibrate `confidence` honestly: 1.0 means "I'm sure this is semantically correct", 0.4 means
 "plausible guess given the context".

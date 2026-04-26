@@ -74,6 +74,31 @@ Rules:
   - `source_fqns` MUST be drawn from the candidate FQNs provided. Do not invent sources.
   - If the CandidateSet is empty / no_match, return pattern=unsupported_in_m1, source_fqns=[].
   - Calibrate llm_confidence honestly: 1.0 = certain, 0.5 = plausible, 0.2 = weak signal.
+
+Disambiguation guidance:
+  - Pick `derived` (NOT `rename`) when the target value is computed by combining MULTIPLE source
+    columns via arithmetic. Example: an `ExtendedAmount` target with both `UnitPrice` and `OrderQty`
+    in the candidates is `derived` with sql `UnitPrice * OrderQty`, NOT `rename` from one of them.
+  - Pick `rename` when EXACTLY ONE source candidate carries the target's full value, even if a
+    type cast is involved. A persisted-computed source column (e.g. `LineTotal`) that already
+    holds the answer is a `rename`, even though its underlying definition is arithmetic.
+  - Pick `concat` when the target is a string built by joining 2+ string source columns.
+    Single-source string mappings are `rename`, not `concat`.
+
+Examples:
+  TARGET: dbo.DimCustomer.FullName (VARCHAR)
+  CANDIDATES: 1. Person.Person.FirstName  2. Person.Person.MiddleName  3. Person.Person.LastName
+  -> pattern=concat, source_fqns=[Person.Person.FirstName, Person.Person.MiddleName, Person.Person.LastName]
+
+  TARGET: dbo.FactInternetSales.ExtendedAmount (DECIMAL)
+  CANDIDATES: 1. Sales.SalesOrderDetail.UnitPrice  2. Sales.SalesOrderDetail.OrderQty
+  -> pattern=derived, source_fqns=[Sales.SalesOrderDetail.UnitPrice, Sales.SalesOrderDetail.OrderQty]
+     (multiplication: UnitPrice * OrderQty)
+
+  TARGET: dbo.FactInternetSales.SalesAmount (DECIMAL)
+  CANDIDATES: 1. Sales.SalesOrderDetail.LineTotal  (a persisted computed column)
+  -> pattern=rename, source_fqns=[Sales.SalesOrderDetail.LineTotal]
+     (LineTotal already holds the value; no recomputation needed downstream)
 """
 
 
