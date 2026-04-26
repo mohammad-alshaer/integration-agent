@@ -2,13 +2,13 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** **M2.1 + M2.1.x complete** (tag `m2.1-complete` on the M2.1 commit; M2.1.x is incremental polish on top). Real-LLM accuracy on AdventureWorks (Gemini 2.5 Flash, paid tier-1): **71.1% inclusive / 90.0% exclusive** exact match (M2.1.x preserves M2.1 headline; the change is in the missing/mismatch ratio). DERIVED 1/8 EXACT (ExtendedAmount via multi-acceptable goldens); RENAME 26/30 EXACT (CustomerKey lifted by computed-column embedding enrichment). M2.1.x recovered DiscountAmount from MISSING → MISMATCH by reverting an over-prescriptive classifier disambiguation bullet (the few-shot remained, but the bullet was pushing the model to `unsupported_in_m1` when canonical sources weren't in the candidate set). **9/10 dbt models build clean** (HumanResources.Employee ODBC type -151 still the known fail). 27+ commits on `main`, 108 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Total M2.1+M2.1.x LLM spend: ~1.5 cents at Flash tier-1.
+**Current milestone:** **M2.2 complete** (tag `m2.2-complete`). Real-LLM accuracy on AdventureWorks (Gemini 2.5 Flash, paid tier-1): **73.7% inclusive / 90.0% exclusive** exact match (was 71.1% / 90.0% at M2.1.x; +2.6pp inclusive). RENAME 28/30 EXACT (was 26/30 — Phase A enrichment unlocked SalesAmount → RENAME[LineTotal] and ListPrice → RENAME[Production.Product.ListPrice]); DERIVED 0/8 EXACT (was 1/8 — ExtendedAmount regressed because the model now picks `Purchasing.PurchaseOrderDetail.LineTotal` over `Sales.SalesOrderDetail.LineTotal`; both have identical formula text). **Multi-source JOIN infrastructure landed** (validator FK-aware FROM clause synthesis + DerivedGenerator multi-source-mode + dbt_emit `intermediate/int_*.sql` model emission) but is unexercised by the AdventureWorks goldens this milestone — the classifier still picks single-table RENAME for TaxAmt/Freight/etc. **9/10 dbt models build clean** (HumanResources.Employee ODBC type -151 still the known fail). 30+ commits on `main`, 114 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Total M2.2 LLM spend: ~4 cents at Flash tier-1 (3 eval re-runs + target enrichment LLM pass).
 
-**Baseline preserved on disk:** `benchmarks/adventureworks/out/eval_report.m1-baseline.json` (gitignored but kept). Diff against `eval_report.json` to measure any future change.
+**Baselines preserved on disk:** `benchmarks/adventureworks/out/eval_report.m1-baseline.json`, `eval_report.m2-1-baseline.json`, `eval_report.m2-2-final.json` (all gitignored but kept). Diff against `eval_report.json` to measure any future change.
 
-**M2.2+ starts here:** Read the "What's left — M2 entry-points" section at the bottom. **M2.1.x follow-ups (DiscountAmount + SalesAmount tuning) and M2.2 (multi-table JOIN for TaxAmt/Freight) are the highest-ROI next steps.** M2.1.x is small prompt iteration; M2.2 is architectural and will reuse the computed_definition enrichment infrastructure shipped in M2.1.
+**M2.3+ starts here:** Read the "What's left — M2 entry-points" section at the bottom. The most surprising M2.2 finding: **the classifier is the bottleneck for unlocking the multi-source JOIN infrastructure.** Even with rich descriptions and a working JOIN-aware validator, the classifier picks single-table RENAME for TaxAmt/Freight rather than multi-source DERIVED. The retrieval-side improvement of M2.2-A unlocked SalesAmount but didn't reach TaxAmt/Freight because their target descriptions don't surface multi-table candidates.
 
-**Canonical M2.1 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\continue-with-m2-1-from-lexical-barto.md` — describes the M2.1 scope and the realistic-vs-best-case projections. M2.1 is shipped; write a new plan file for M2.1.x or M2.2 work.
+**Canonical M2.1+M2.1.x+M2.2 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\continue-with-m2-1-from-lexical-barto.md` — final state describes the M2.2 scope, predicted vs actual outcomes, and stop/cut decisions. Write a new plan file for M2.3 work.
 
 **Canonical M1 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\i-want-to-do-jiggly-yeti.md` — describes the M1 scope; useful context but M1 is shipped. Write a new plan file for M2 work; don't edit the M1 one.
 
@@ -218,6 +218,9 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
+<pending> Refresh CLAUDE.md for M2.2-complete state                         (114 tests)
+fc83c60  M2.2: Lift accuracy 71.1% -> 73.7% via target enrichment + multi-source JOIN infrastructure (114 tests)
+f31f7b3  Fill in M2.1.x commit hash in CLAUDE.md log                          (108 tests)
 6449d6f  M2.1.x: revert classifier disambiguation bullet + document retrieval blockers (108 tests)
 0887f75  Fill in m2.1-complete tag hash + CLAUDE.md refresh hash             (108 tests)
 492afa7  Refresh CLAUDE.md for M2.1-complete state                         (108 tests)
@@ -252,41 +255,47 @@ df0a8ae  M0 Day 4 scaffolding: Gemini + Langfuse ready for API keys
 2df890d  M0 Day 1: scaffold
 ```
 
-Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1-complete` on `4346c93` (latest).
+Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1-complete` on `4346c93`, `m2.2-complete` on `fc83c60` (latest).
 Public repo: https://github.com/mohammad-alshaer/integration-agent — first push landed mid-M1 session.
 
 ---
 
 ## What's left — M2 entry-points
 
-M1 + M2.1 are shipped + tagged + pushed. M2.1.x and M2.2+ start here. Ordered by impact-to-effort:
+M1 + M2.1 + M2.1.x + M2.2 are shipped + tagged + pushed. M2.3+ starts here. Ordered by impact-to-effort:
 
-### M2.1.x — Done; documented findings (next investigation is M2.X target enrichment)
+### M2.2.x — ExtendedAmount disambiguation (small, follow-up)
 
-M2.1.x landed: **disambiguation bullet reverted, DiscountAmount recovered to MISMATCH**, headline metrics unchanged (71.1% inclusive / 90.0% exclusive). The investigation also disproved the matcher-rerank hypothesis — see `tmp/debug_salesamount.py` (gitignored) for the diagnostic.
+M2.2's Phase A enrichment unlocked SalesAmount but introduced a regression: `dbo.FactInternetSales.ExtendedAmount` now picks `Purchasing.PurchaseOrderDetail.LineTotal` instead of `Sales.SalesOrderDetail.LineTotal`. Both have identical formula text in the source profile (`OrderQty * UnitPrice`-style), so the embedder/rerank can't distinguish them by formula alone. The signal that should disambiguate them — "this target is from FactInternetSales, which is about internet SALES, prefer Sales.* sources over Purchasing.*" — isn't surfaced in the matcher prompt today.
 
-**Confirmed retrieval-side blockers (M2.X work needed):**
-- **SalesAmount cannot reach RENAME[LineTotal] via prompt tuning.** Debug script confirms LineTotal is NOT in HNSW top-20 for SalesAmount. The target's `column_embed_text` is too sparse (`dbo.FactInternetSales.SalesAmount | type: money` — no `ms_description` on AWDW columns), so the embedder ranks "money"-typed columns higher than LineTotal regardless of LineTotal's enriched source-side text. Fix requires **target-side enrichment** (LLM-derived descriptions for AWDW columns) — not in M2.1.x scope.
-- **DiscountAmount cannot reach DERIVED[UnitPrice, UnitPriceDiscount, OrderQty]**. OrderQty is at rank 19 with k=20 — outside the default k=10. The classifier physically can't return sources not in the candidate set. Bumping default k risks matcher-prompt bloat; the cleaner fix is target enrichment (same as SalesAmount).
-- **Matcher rerank changes don't help and can regress.** Tried surfacing `computed_definition` in the rerank prompt (formula display + system-prompt sentence) — regressed CustomerKey EXACT → PATTERN without unlocking SalesAmount/DiscountAmount. Reverted. Don't retry without solving the retrieval blocker first.
+**Approaches to evaluate (~30 min each):**
+- Add target-table-context line to `_format_target` in `semantic_matcher.py` (e.g. "Target table: FactInternetSales — fact table for internet sales transactions")
+- Extend Schema Explorer to also generate per-table descriptions, then surface in the matcher prompt
+- Add an additional accepted_alternative to ExtendedAmount golden (semantically wrong — Purchasing isn't equivalent — so this is a no)
 
-### M2.2 — Multi-source-table DERIVED + JOIN modeling
+### M2.3 — Make the classifier emit multi-source DERIVED
 
-The `_unmodeled_multi_source.txt` sidecar pattern in `packages/dbt_emit/src/dbt_emit/model.py` punts on multi-source specs. Extending it to emit JOIN-aware dbt models unlocks `FactInternetSales.TaxAmt`/`Freight` (and probably half a dozen more). M2.1's `computed_definition` enrichment is already in place — JOIN candidates that touch computed columns (e.g. `LineTotal` in `Detail.LineTotal × Header.TaxAmt / Header.SubTotal`) will retrieve correctly without further infrastructure work.
+M2.2 landed the multi-source JOIN infrastructure (validator, dbt_emit `intermediate/` models, generator multi-source mode) but the classifier still picks single-table RENAME for TaxAmt/Freight. The infra is dormant infrastructure ready to be exercised by future classifier improvements.
 
-### M2.3 — DuckDB-executed SQL equivalence (4th match level)
+**Why M2.2's Phase B2 (TaxAmt few-shot) failed:** Same failure mode as M2.1.x DiscountAmount — when the canonical sources aren't all in the top-K candidates, the model falls back to `unsupported_in_m1` instead of attempting. Fixes require:
+- **Better cross-table retrieval** (target descriptions that reference allocation patterns, OR a JOIN-aware retrieval step that surfaces FK-linked candidates), AND
+- **Classifier robustness** (handle "few-shot suggests N sources but candidates have M < N" gracefully — emit DERIVED with M sources rather than UNSUPPORTED).
+
+This is genuinely complex and may need its own multi-step plan.
+
+### M2.4 — DuckDB-executed SQL equivalence (4th match level)
 
 Currently `SQL_SEMANTIC` only checks "does the normalized SQL contain every expected source column name?" — a token-level proxy. Real semantic equivalence: run both the expected and actual SQL against the sandbox and compare result sets. Bigger lift; truer signal.
 
-### M2.4 — `ClaudeProvider`
+### M2.5 — `ClaudeProvider`
 
 ~15-line `LLMClient` impl backed by `anthropic` SDK with prompt caching. Lets us A/B Flash vs Haiku 4.5 vs Sonnet 4.6 on the same golden set without changing any other code. Useful both for cost-shopping and as portfolio evidence of provider-swappable design.
 
-### M2.5 — Commutative-arg sorting in `normalize_sql`
+### M2.6 — Commutative-arg sorting in `normalize_sql`
 
 Tiny lift, modest scope (CONCAT_WS isn't commutative; benefits mostly arithmetic + COALESCE).
 
-### M2.6 — `pipeline_dollars_total` field on EvalReport
+### M2.7 — `pipeline_dollars_total` field on EvalReport
 
 Telemetry now reports tokens; per-provider price tables would convert that to dollars. Useful for M2 cost-comparison runs.
 
@@ -304,14 +313,18 @@ Telemetry now reports tokens; per-provider price tables would convert that to do
 
 7. **The classifier prompt is ~5 LoC longer than M1** (M2.1 added 2 few-shot examples for ExtendedAmount + SalesAmount; M2.1.x removed the 4-LoC amount-vs-percentage disambiguation bullet because it was over-prescriptive). Watch for prompt-bloat regressions when adding more disambiguation rules — the M2.1.x DiscountAmount investigation showed that prescriptive bullets without reachable canonical sources push the model into `unsupported_in_m1`.
 
-8. **Target-side embedding enrichment is the next major lever.** AWDW column profiles mostly lack `ms_description`, so target embed text is `fqn | type: ...` only. This caps retrieval quality for ambiguously-named target columns (SalesAmount → can't find LineTotal; DiscountAmount → can't find OrderQty). The fix is an LLM enrichment pass over the target profile to generate descriptions, OR re-introspect AWDW with extended-properties enabled. Either way, do this before tuning the matcher again.
+8. **Target-side description enrichment landed in M2.2.** Schema Explorer now generates `ms_description` for description-bare columns (Phase A). The current `tmp/profiles/awdw2022.json` has all 91 target columns enriched in place via `tmp/enrich_target_descriptions.py` (gitignored). If you re-derive the AWDW profile from scratch via `worker profile --enrich`, the new field is populated automatically. **The descriptions are LLM-generated, not from sys.extended_properties** — they're labeled "generated_description" in the enrichment output and folded into ms_description only when missing.
+
+9. **Multi-source JOIN infrastructure (M2.2 Phase B1) is live but unexercised.** `validator.runner._resolve_from` handles 2-table specs by FK lookup via `ColumnProfile.fk_ref`; `dbt_emit.write_models` emits `intermediate/int_*.sql` JOIN models when `source_profile` is supplied; `DerivedGenerator` understands multi-source-table mode (TABLE.column prefixes, JOIN HINT in user prompt). But the classifier still picks single-table RENAME for TaxAmt/Freight, so this code path runs only on synthetic test fixtures, not real eval specs. Future M2.3 work to make the classifier emit multi-source DERIVED will exercise this for free.
+
+10. **Known M2.2 regression — ExtendedAmount.** Was EXACT in M2.1 (via the RENAME[Sales.SalesOrderDetail.LineTotal] alternative); is MISMATCH in M2.2 because the model now picks `Purchasing.PurchaseOrderDetail.LineTotal` (same formula text, wrong domain). Documented as M2.2.x. Quick fixes to try: target-table-context line in `_format_target` of `semantic_matcher.py`; or per-table description enrichment.
 
 ---
 
 ## When in doubt
 
-1. **For M2.1.x or M2.2 work:** start with the "What's left — M2 entry-points" section above. Compare any change against the M2.1 numbers in `benchmarks/adventureworks/out/eval_report.json` (the live report) AND `eval_report.m1-baseline.json` (the M1 floor). Both are gitignored but kept on disk.
-2. **For project history:** the M1 plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md` and the M2.1 plan at `~/.claude/plans/continue-with-m2-1-from-lexical-barto.md` are reference-only.
+1. **For M2.2.x or M2.3+ work:** start with the "What's left — M2 entry-points" section above. Compare any change against the M2.2 numbers in `benchmarks/adventureworks/out/eval_report.json` (the live report) AND `eval_report.m2-2-final.json` (the M2.2 baseline) AND `eval_report.m1-baseline.json` (the M1 floor). All are gitignored but kept on disk.
+2. **For project history:** the M1 plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md` and the M2.1+M2.1.x+M2.2 evolved plan at `~/.claude/plans/continue-with-m2-1-from-lexical-barto.md` are reference-only.
 3. **Memory:** check `MEMORY.md` for project/feedback notes about Mohammad's preferences and corporate environment specifics.
 4. **For DataOps / Claude-specific concept questions**, explain foundational concepts (eval, RAG, dbt, embeddings, LangGraph state machines, etc.) with a concrete example tied to the current task. Mohammad is a new-grad — don't just name-drop.
 5. **Cost discipline:** Mohammad prefers free/free-tier solutions; surface cost estimates upfront on any paid-service decision. Gemini Flash paid tier-1 is already configured (~$0.30/full eval; cache makes re-runs nearly free).
