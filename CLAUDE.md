@@ -251,7 +251,7 @@ npm --prefix apps/web run build             # production build (also type-checks
 ## Current status (commit log, newest first)
 
 ```
-<pending> Refresh CLAUDE.md for M4-complete state                          (137 tests)
+78d912a  Refresh CLAUDE.md for M4-complete state                          (137 tests)
 998b52f  M4.3: HealthPill + /health page + responsive polish (M4 umbrella) (137 tests)
 b76cbc1  M4.2: /map page with profile upload + long-request UX             (137 tests)
 50fec54  M4.1: scaffold apps/web (Next.js 16 + Tailwind v4) + /eval pages  (137 tests)
