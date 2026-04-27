@@ -51,7 +51,7 @@ def run(
     rebuild_index: bool = typer.Option(
         False, help="Drop + rebuild the source embedding index before running."
     ),
-    k: int = typer.Option(10, help="Top-K source candidates per target column."),
+    k: int = typer.Option(15, help="Top-K source candidates per target column."),
     rate_limit_delay: float = typer.Option(
         6.5, help="Seconds to sleep between cache-miss LLM calls (Flash free tier: 6.5)."
     ),

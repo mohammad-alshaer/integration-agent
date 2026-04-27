@@ -75,6 +75,14 @@ Rules:
   - If the CandidateSet is empty / no_match, return pattern=unsupported_in_m1, source_fqns=[].
   - Calibrate llm_confidence honestly: 1.0 = certain, 0.5 = plausible, 0.2 = weak signal.
 
+Partial-match graceful degradation:
+  - If an example below shows a "canonical" source set (e.g. UnitPrice + UnitPriceDiscount + OrderQty)
+    but the actual CANDIDATES contain only a subset of those columns, do NOT fall back to
+    `unsupported_in_m1`. Emit `derived` with the available subset and lower your `llm_confidence`
+    to reflect the partial match (e.g. 0.5 if 2 of 3 expected columns are present, 0.3 if 1 of 3).
+  - The downstream validator can still partially-validate the SQL. A best-effort DERIVED with
+    fewer-than-canonical sources is more useful to humans than a `unsupported_in_m1` with no SQL.
+
 Disambiguation guidance:
   - Pick `derived` (NOT `rename`) when the target value is computed by combining MULTIPLE source
     columns via arithmetic. Example: an `ExtendedAmount` target with both `UnitPrice` and `OrderQty`
@@ -104,6 +112,11 @@ Examples:
   CANDIDATES: 1. Sales.SalesOrderDetail.UnitPrice  2. Sales.SalesOrderDetail.UnitPriceDiscount (a percentage 0..1)  3. Sales.SalesOrderDetail.OrderQty
   -> pattern=derived, source_fqns=[Sales.SalesOrderDetail.UnitPrice, Sales.SalesOrderDetail.UnitPriceDiscount, Sales.SalesOrderDetail.OrderQty]
      (multiplication: UnitPrice * UnitPriceDiscount * OrderQty — discount-percentage applied to extended amount)
+
+  TARGET: dbo.FactInternetSales.TaxAmt (DECIMAL)  [Multi-source-table fact column at detail grain]
+  CANDIDATES: 1. Sales.SalesOrderHeader.TaxAmt  2. Sales.SalesOrderHeader.SubTotal  3. Sales.SalesOrderDetail.LineTotal
+  -> pattern=derived, source_fqns=[Sales.SalesOrderHeader.TaxAmt, Sales.SalesOrderHeader.SubTotal, Sales.SalesOrderDetail.LineTotal]
+     (header amount pro-rated per detail line: Header.TaxAmt * Detail.LineTotal / Header.SubTotal — when sources span Header + Detail tables and the fact-table grain is per detail line, allocation is the right pattern, NOT a single-source rename of the bare Header value)
 """
 
 

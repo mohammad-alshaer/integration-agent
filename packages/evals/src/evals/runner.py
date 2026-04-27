@@ -32,7 +32,7 @@ class RunnerConfig:
     vector_db: Path = Path(".duckdb/integration_agent.duckdb")
     sample_dir: Path | None = None
     rebuild_index: bool = False
-    k: int = 10
+    k: int = 15
     rate_limit_delay: float = 6.5
     max_retries: int = 1
 

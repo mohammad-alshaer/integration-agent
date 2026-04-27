@@ -3,7 +3,7 @@
 Flow per target column:
   1. Build canonical embedding text from the target ColumnProfile.
   2. Embed it.
-  3. SourceVectorStore.top_k(k=10) -> top-K source candidates by vector distance.
+  3. SourceVectorStore.top_k(k=15) -> top-K source candidates by vector distance.
   4. One LLM call that reranks the candidates and attaches per-candidate rationale.
   5. Emit CandidateSet (or mark no_match if the LLM sees nothing plausible).
 
@@ -49,7 +49,7 @@ _SYSTEM_PROMPT = """\
 You are a DataOps expert matching a TARGET warehouse column to SOURCE OLTP columns.
 
 You will be given:
-  - A target column (name, type, description, semantic type)
+  - A target column (name, type, description, semantic type, and target TABLE)
   - A ranked list of source-column candidates retrieved by embedding similarity
 
 Your job:
@@ -63,11 +63,28 @@ Constraints:
   - `source_fqn` MUST match EXACTLY one of the retrieved candidate FQNs — no invention.
   - Order kept candidates best-first.
 
-A target may legitimately match MULTIPLE sources (e.g. a FullName target composed of FirstName + MiddleName + LastName). In that case, return all the component sources, each with its own rationale."""
+Domain alignment is a strong tiebreaker:
+  - Strongly prefer candidates whose SOURCE TABLE/SCHEMA is semantically aligned with the TARGET TABLE.
+  - Example: a target in `dbo.FactInternetSales` (about INTERNET SALES) should pull from `Sales.*`
+    source tables, NOT `Purchasing.*` (about VENDOR PURCHASES) or other domain-mismatched schemas,
+    even when the columns have identical names or formulas. Source columns from the wrong domain are
+    semantically WRONG even if they're structurally identical.
+  - When two candidates have similar embedding distance / formula text but come from different domain
+    schemas, the domain-aligned one wins — drop the domain-mismatched one entirely.
+
+A target may legitimately match MULTIPLE sources (e.g. a FullName target composed of FirstName + MiddleName + LastName). In that case, return all the component sources, each with its own rationale.
+
+A target may legitimately match sources spanning MULTIPLE TABLES (e.g. a fact-table allocation
+column whose value comes from a header column allocated by a detail-line ratio). Return all
+the contributing sources across both tables — don't stop at one table's columns."""
 
 
 def _format_target(col: ColumnProfile) -> str:
-    parts = [f"FQN: {col.fqn}", f"Type: {col.sql_type}"]
+    parts = [
+        f"FQN: {col.fqn}",
+        f"Target table: {col.table_schema}.{col.table_name}  (use this to filter domain-aligned sources)",
+        f"Type: {col.sql_type}",
+    ]
     if col.ms_description:
         parts.append(f"Description: {col.ms_description}")
     if col.inferred_semantic_type.value != "unknown":
@@ -93,7 +110,7 @@ def match_target_columns(
     embedder: Embedder,
     llm: LLMClient,
     *,
-    k: int = 10,
+    k: int = 15,
     rate_limit_delay_sec: float = 0.0,
 ) -> dict[str, CandidateSet]:
     """Return {target_fqn: CandidateSet} for every input target column."""

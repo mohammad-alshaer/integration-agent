@@ -84,7 +84,7 @@ def build_graph(
     llm: LLMClient,
     store: SourceVectorStore,
     *,
-    k_candidates: int = 10,
+    k_candidates: int = 15,
     rate_limit_delay_sec: float = 0.0,
     sandbox: Sandbox | None = None,
     max_retries: int = 1,
