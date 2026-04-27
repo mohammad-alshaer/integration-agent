@@ -31,6 +31,7 @@ export function ProfileUploader({ label, hint, onLoad }: ProfileUploaderProps) {
   const [bytes, setBytes] = useState<number>(0);
   const [tables, setTables] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   async function handleFile(file: File) {
     setError(null);
@@ -61,19 +62,51 @@ export function ProfileUploader({ label, hint, onLoad }: ProfileUploaderProps) {
     onLoad(null);
   }
 
+  function onDragEnter(e: React.DragEvent<HTMLLabelElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer?.types?.includes("Files")) setDragOver(true);
+  }
+  function onDragOver(e: React.DragEvent<HTMLLabelElement>) {
+    // Required so onDrop fires.
+    e.preventDefault();
+    e.stopPropagation();
+    if (!dragOver && e.dataTransfer?.types?.includes("Files")) setDragOver(true);
+  }
+  function onDragLeave(e: React.DragEvent<HTMLLabelElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only clear if leaving the label entirely (not just moving over a child).
+    const related = e.relatedTarget as Node | null;
+    if (!related || !e.currentTarget.contains(related)) setDragOver(false);
+  }
+  function onDrop(e: React.DragEvent<HTMLLabelElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    const f = e.dataTransfer?.files?.[0];
+    if (f) void handleFile(f);
+  }
+
+  const stateClass = error
+    ? "border-red-500/40 bg-red-500/5"
+    : dragOver
+      ? "border-cyan border-dashed bg-[var(--color-cyan-glow)] shadow-[0_0_0_4px_rgba(0,255,255,0.08),0_20px_60px_-20px_rgba(0,255,255,0.35)]"
+      : filename
+        ? "border-cyan/40 bg-[var(--color-cyan-glow)]"
+        : "border-mist-10 bg-black/40 hover:border-mist-12 hover:bg-black/60";
+
   return (
     <div>
       <p className="font-mono text-[12px] uppercase tracking-[0.7px] text-whisper">
         {label}
       </p>
       <label
-        className={`mt-2 flex cursor-pointer items-center justify-between gap-4 rounded-md border px-4 py-3 transition-colors ${
-          error
-            ? "border-red-500/40 bg-red-500/5"
-            : filename
-              ? "border-cyan/40 bg-[var(--color-cyan-glow)]"
-              : "border-mist-10 bg-black hover:border-mist-12"
-        }`}
+        onDragEnter={onDragEnter}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        className={`relative mt-2 flex cursor-pointer items-center justify-between gap-4 rounded-md border-2 px-4 py-4 backdrop-blur transition-all duration-200 ${stateClass}`}
       >
         <input
           ref={inputRef}
@@ -88,18 +121,26 @@ export function ProfileUploader({ label, hint, onLoad }: ProfileUploaderProps) {
         <div className="min-w-0 flex-1">
           {filename ? (
             <>
-              <div className="truncate font-mono text-[14px] tracking-[-0.28px] text-white">
-                {filename}
+              <div className="flex items-center gap-2">
+                <CheckIcon />
+                <div className="truncate font-mono text-[14px] tracking-[-0.28px] text-white">
+                  {filename}
+                </div>
               </div>
-              <div className="font-mono text-[12px] text-whisper">
+              <div className="mt-1 font-mono text-[12px] text-whisper">
                 {(bytes / 1024 / 1024).toFixed(2)} MB · {tables} tables
               </div>
             </>
           ) : (
             <>
-              <div className="text-base text-ghost">{hint}</div>
-              <div className="font-mono text-[12px] text-whisper">
-                click to choose a .json file
+              <div className="flex items-center gap-3">
+                <UploadIcon active={dragOver} />
+                <div className={dragOver ? "text-cyan" : "text-ghost"}>
+                  {dragOver ? "drop to upload" : hint}
+                </div>
+              </div>
+              <div className="mt-1 ml-9 font-mono text-[12px] text-whisper">
+                drag a .json here or click to choose
               </div>
             </>
           )}
@@ -121,5 +162,43 @@ export function ProfileUploader({ label, hint, onLoad }: ProfileUploaderProps) {
         <p className="mt-2 font-mono text-[12px] text-red-400">{error}</p>
       )}
     </div>
+  );
+}
+
+function UploadIcon({ active = false }: { active?: boolean }) {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 transition-colors ${active ? "stroke-cyan" : "stroke-whisper"}`}
+      aria-hidden
+    >
+      <path d="M12 16V4" />
+      <path d="m6 10 6-6 6 6" />
+      <path d="M4 20h16" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0 stroke-cyan"
+      aria-hidden
+    >
+      <path d="m5 12 5 5L20 7" />
+    </svg>
   );
 }

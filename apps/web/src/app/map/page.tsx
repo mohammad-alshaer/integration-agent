@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Brand } from "@/components/Brand";
 import { Container } from "@/components/Container";
-import { Card } from "@/components/Card";
 import { MappingSpecCard } from "@/components/MappingSpecCard";
 import { NumberField, Toggle } from "@/components/NumberField";
 import { PageHeader } from "@/components/PageHeader";
@@ -28,9 +26,10 @@ export default function MapPage() {
   const [submitting, setSubmitting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [result, setResult] = useState<MapResponse | null>(null);
-  const [error, setError] = useState<{ status: number | null; message: string } | null>(
-    null,
-  );
+  const [error, setError] = useState<{
+    status: number | null;
+    message: string;
+  } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -91,7 +90,9 @@ export default function MapPage() {
         setError({
           status: null,
           message:
-            e instanceof Error ? `connect failed: ${e.message}` : "unknown error",
+            e instanceof Error
+              ? `connect failed: ${e.message}`
+              : "unknown error",
         });
       }
     } finally {
@@ -105,33 +106,35 @@ export default function MapPage() {
   }
 
   return (
-    <>
-      <Brand />
-      <main className="flex-1">
-        <Container>
+    <main className="flex-1 relative">
+      <Container>
+        <div className="stagger stagger-1">
           <PageHeader
             overline="map · run the graph"
-            title="Map a target table"
+            title={
+              <>
+                Map a target table
+              </>
+            }
             subtitle="Submit source + target SchemaProfile JSON, pick a target table, run the LangGraph pipeline. Returns one MappingSpec per target column with pattern, SQL, and validation pass-rate. Cached runs return in seconds; cold-cache full tables can take up to 5 minutes."
           />
+        </div>
 
-          <form onSubmit={onSubmit} className="space-y-12 py-12">
-            <section className="space-y-6">
-              <h2 className="font-mono text-[12px] uppercase tracking-[0.7px] text-whisper">
-                01 / inputs
-              </h2>
-              <div className="grid gap-6 md:grid-cols-2">
-                <ProfileUploader
-                  label="source profile"
-                  hint="e.g. tmp/profiles/aw2022_filtered.json"
-                  onLoad={setSource}
-                />
-                <ProfileUploader
-                  label="target profile"
-                  hint="e.g. tmp/profiles/awdw2022.json"
-                  onLoad={handleTargetLoad}
-                />
-              </div>
+        <form onSubmit={onSubmit} className="space-y-8 py-12">
+          <FormPanel className="stagger stagger-2" step="01" title="Inputs">
+            <div className="grid gap-6 md:grid-cols-2">
+              <ProfileUploader
+                label="source profile"
+                hint="e.g. tmp/profiles/aw2022_filtered.json"
+                onLoad={setSource}
+              />
+              <ProfileUploader
+                label="target profile"
+                hint="e.g. tmp/profiles/awdw2022.json"
+                onLoad={handleTargetLoad}
+              />
+            </div>
+            <div className="mt-6">
               <Select
                 label="target table"
                 value={targetTable}
@@ -144,75 +147,104 @@ export default function MapPage() {
                 }
                 disabled={!target}
               />
-            </section>
+            </div>
+          </FormPanel>
 
-            <section className="space-y-6">
-              <h2 className="font-mono text-[12px] uppercase tracking-[0.7px] text-whisper">
-                02 / options
-              </h2>
-              <div className="grid gap-6 md:grid-cols-3">
-                <NumberField
-                  label="k candidates"
-                  value={k}
-                  onChange={setK}
-                  min={5}
-                  max={50}
-                  hint="HNSW top-K (default 15)"
-                />
-                <NumberField
-                  label="max retries"
-                  value={maxRetries}
-                  onChange={setMaxRetries}
-                  min={0}
-                  max={3}
-                  hint="DERIVED retry on validator failure (default 1)"
-                />
-                <Toggle
-                  label="rebuild index"
-                  checked={rebuildIndex}
-                  onChange={setRebuildIndex}
-                  hint="reset + re-embed source on this request"
-                />
-              </div>
-            </section>
+          <FormPanel className="stagger stagger-3" step="02" title="Options">
+            <div className="grid gap-6 md:grid-cols-3">
+              <NumberField
+                label="k candidates"
+                value={k}
+                onChange={setK}
+                min={5}
+                max={50}
+                hint="HNSW top-K (default 15)"
+              />
+              <NumberField
+                label="max retries"
+                value={maxRetries}
+                onChange={setMaxRetries}
+                min={0}
+                max={3}
+                hint="DERIVED retry on validator failure (default 1)"
+              />
+              <Toggle
+                label="rebuild index"
+                checked={rebuildIndex}
+                onChange={setRebuildIndex}
+                hint="reset + re-embed source on this request"
+              />
+            </div>
+          </FormPanel>
 
-            <section className="flex items-center gap-4">
+          <section className="flex flex-wrap items-center gap-4 stagger stagger-4">
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className={`cta-primary inline-flex items-center gap-2 rounded-md px-6 py-3 font-mono text-[14px] uppercase tracking-[0.55px] transition-all ${
+                canSubmit
+                  ? "bg-white text-black"
+                  : "bg-phantom text-whisper cursor-not-allowed"
+              }`}
+            >
+              {submitting
+                ? `mapping…  ${elapsed.toFixed(1)}s`
+                : "run mapping"}
+              {!submitting && <span aria-hidden>→</span>}
+            </button>
+            {submitting && (
               <button
-                type="submit"
-                disabled={!canSubmit}
-                className={`rounded-md px-6 py-3 font-mono text-[14px] uppercase tracking-[0.55px] transition-all ${
-                  canSubmit
-                    ? "bg-white text-black hover:shadow-[var(--shadow-brutalist)]"
-                    : "bg-phantom text-whisper cursor-not-allowed"
-                }`}
+                type="button"
+                onClick={cancel}
+                className="rounded-md border border-charcoal px-4 py-3 font-mono text-[14px] uppercase tracking-[0.55px] text-ghost hover:text-white hover:border-mist-12 transition-colors"
               >
-                {submitting ? `mapping…  ${elapsed.toFixed(1)}s` : "run mapping"}
+                cancel
               </button>
-              {submitting && (
-                <button
-                  type="button"
-                  onClick={cancel}
-                  className="rounded-md border border-charcoal px-4 py-3 font-mono text-[14px] uppercase tracking-[0.55px] text-ghost hover:text-white hover:border-mist-12 transition-colors"
-                >
-                  cancel
-                </button>
-              )}
-              {submitting && (
-                <span className="ml-2 inline-flex items-center gap-3 text-base text-ghost">
-                  <Spinner />
-                  <span className="font-mono text-[14px] tracking-[-0.28px]">
-                    POST /map · single thread · cached calls return ~10s, cold up to 5min
-                  </span>
+            )}
+            {submitting && (
+              <span className="ml-2 inline-flex items-center gap-3 text-base text-ghost">
+                <Spinner />
+                <span className="font-mono text-[14px] tracking-[-0.28px]">
+                  POST /map · single thread · cached ~10s, cold up to 5min
                 </span>
-              )}
-            </section>
-          </form>
+              </span>
+            )}
+          </section>
+        </form>
 
-          {error && <ErrorPanel status={error.status} message={error.message} />}
-          {result && <ResultPanel result={result} />}
-        </Container>
-      </main>
-    </>
+        {error && <ErrorPanel status={error.status} message={error.message} />}
+        {result && <ResultPanel result={result} />}
+      </Container>
+    </main>
+  );
+}
+
+function FormPanel({
+  step,
+  title,
+  children,
+  className = "",
+}: {
+  step: string;
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`glass rounded-md p-6 md:p-8 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)] ${className}`}
+    >
+      <div className="flex items-baseline gap-3 mb-6">
+        <span className="font-mono text-[11px] uppercase tracking-[0.55px] text-cyan">
+          {step}
+        </span>
+        <span className="block w-px h-3 bg-mist-12" aria-hidden />
+        <h2 className="font-mono text-[12px] uppercase tracking-[0.7px] text-whisper">
+          {title}
+        </h2>
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -224,22 +256,24 @@ function ErrorPanel({
   message: string;
 }) {
   return (
-    <Card className="my-12 border-red-500/30">
+    <div className="glass glass-rim my-12 rounded-md p-8 border-red-500/30">
       <p className="font-mono text-[12px] uppercase tracking-[0.7px] text-red-400">
         {status ? `error ${status}` : "error"}
       </p>
       <p className="mt-3 text-white">{message}</p>
       {status === 504 && (
         <p className="mt-2 font-mono text-[14px] text-whisper">
-          the graph exceeded the 600s timeout. try a smaller table, or run cold-cache via the CLI.
+          the graph exceeded the 600s timeout. try a smaller table, or run
+          cold-cache via the CLI.
         </p>
       )}
       {status === 422 && (
         <p className="mt-2 font-mono text-[14px] text-whisper">
-          request body failed pydantic validation — check that both profiles are full SchemaProfile shapes.
+          request body failed pydantic validation — check that both profiles
+          are full SchemaProfile shapes.
         </p>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -250,13 +284,13 @@ function ResultPanel({ result }: { result: MapResponse }) {
   );
   return (
     <section className="space-y-8 pb-16">
-      <Card brutalist>
+      <div className="glass glass-rim rounded-md p-6 md:p-8 shadow-[var(--shadow-lift)]">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
             <p className="font-mono text-[12px] uppercase tracking-[0.7px] text-whisper">
               result · target table
             </p>
-            <h2 className="mt-2 font-mono text-2xl tracking-[-0.48px] text-white">
+            <h2 className="mt-2 font-mono text-3xl md:text-4xl tracking-[-0.04em] text-white">
               {result.target_table}
             </h2>
           </div>
@@ -267,7 +301,7 @@ function ResultPanel({ result }: { result: MapResponse }) {
             </span>
           </div>
         </div>
-        <div className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4">
+        <div className="mt-7 grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-4">
           <Metric label="specs" value={result.specs.length} />
           <Metric label="retries" value={result.retry_count} />
           <Metric
@@ -275,19 +309,20 @@ function ResultPanel({ result }: { result: MapResponse }) {
             value={
               result.validation_summary
                 ? `${result.validation_summary.passed} / ${
-                    result.validation_summary.passed + result.validation_summary.failed
+                    result.validation_summary.passed +
+                    result.validation_summary.failed
                   }`
                 : "—"
             }
           />
           <Metric
             label="patterns"
-            value={summaryEntries
-              .map(([k, v]) => `${k}:${v}`)
-              .join(" · ")}
+            value={
+              summaryEntries.map(([k, v]) => `${k}:${v}`).join(" · ") || "—"
+            }
           />
         </div>
-      </Card>
+      </div>
 
       <h2 className="font-mono text-[12px] uppercase tracking-[0.7px] text-whisper">
         specs · {result.specs.length}
@@ -313,7 +348,7 @@ function Metric({
       <p className="font-mono text-[11px] uppercase tracking-[0.55px] text-whisper">
         {label}
       </p>
-      <p className="mt-1 font-mono text-[15px] tracking-[-0.28px] text-white">
+      <p className="mt-2 font-mono text-[18px] tracking-[-0.32px] text-white">
         {value}
       </p>
     </div>

@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Brand } from "@/components/Brand";
 import { Container } from "@/components/Container";
-import { Card } from "@/components/Card";
 import { DataTable } from "@/components/DataTable";
 import { PageHeader } from "@/components/PageHeader";
 import {
@@ -18,7 +16,12 @@ import {
 } from "@/lib/api";
 import { formatDollars, formatPercent, formatRanAt } from "@/lib/format";
 
-const LEVELS = ["exact", "pattern", "sql_exec_equivalent", "sql_semantic"] as const;
+const LEVELS = [
+  "exact",
+  "pattern",
+  "sql_exec_equivalent",
+  "sql_semantic",
+] as const;
 const LEVEL_LABEL: Record<(typeof LEVELS)[number], string> = {
   exact: "exact",
   pattern: "pattern",
@@ -41,53 +44,83 @@ export default async function EvalDetailPage({
   }
 
   return (
-    <>
-      <Brand />
-      <main className="flex-1">
-        <Container>
+    <main className="flex-1 relative">
+      <Container>
+        <div className="stagger stagger-1">
           <PageHeader
             overline={`run · ${report.run_id}`}
             title={
               <>
                 {report.pair}
                 <span className="text-ghost"> · </span>
-                <span className="text-cyan">{report.provider}</span>
+                <span className="text-gradient-cyan">{report.provider}</span>
               </>
             }
             subtitle={
-              <span className="font-mono text-[14px] tracking-[-0.28px] text-ghost">
-                {report.model} · {formatRanAt(report.ran_at)} ·{" "}
-                {report.expected_count} expected · {report.actual_count} actual ·{" "}
-                {formatDollars(report.pipeline_dollars_total)}
-              </span>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <MetaPill label="model" value={report.model} mono />
+                <MetaPill label="ran" value={formatRanAt(report.ran_at)} mono />
+                <MetaPill label="expected" value={String(report.expected_count)} />
+                <MetaPill label="actual" value={String(report.actual_count)} />
+                <MetaPill
+                  label="cost"
+                  value={formatDollars(report.pipeline_dollars_total)}
+                />
+              </div>
             }
           />
+        </div>
 
-          <section className="py-12">
-            <h2 className="font-mono text-[12px] uppercase tracking-[0.7px] text-whisper mb-4">
-              rates
-            </h2>
-            <RatesMatrix rates={report.rates} />
-          </section>
+        <section className="py-12 stagger stagger-2">
+          <h2 className="font-mono text-[12px] uppercase tracking-[0.7px] text-whisper mb-4">
+            rates
+          </h2>
+          <RatesMatrix rates={report.rates} />
+        </section>
 
-          <section className="py-12">
-            <h2 className="font-mono text-[12px] uppercase tracking-[0.7px] text-whisper mb-4">
+        <section className="py-12 stagger stagger-3">
+          <div className="flex items-baseline justify-between mb-4">
+            <h2 className="font-mono text-[12px] uppercase tracking-[0.7px] text-whisper">
               entries · {report.entries.length}
             </h2>
-            <EntriesTable entries={report.entries} />
-          </section>
-
-          <div className="border-t border-mist-06 py-8">
-            <Link
-              href="/eval"
-              className="font-mono text-[14px] text-ghost hover:text-cyan transition-colors"
-            >
-              ← all evaluations
-            </Link>
           </div>
-        </Container>
-      </main>
-    </>
+          <EntriesTable entries={report.entries} />
+        </section>
+
+        <div className="border-t border-mist-06 py-8 stagger stagger-4">
+          <Link
+            href="/eval"
+            className="inline-flex items-center gap-2 font-mono text-[14px] text-ghost hover:text-cyan transition-colors"
+          >
+            <span aria-hidden className="transition-transform group-hover:-translate-x-1">←</span>
+            all evaluations
+          </Link>
+        </div>
+      </Container>
+    </main>
+  );
+}
+
+function MetaPill({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-pill border border-mist-10 bg-black/40 backdrop-blur px-3 py-1">
+      <span className="font-mono text-[10px] uppercase tracking-[0.55px] text-whisper">
+        {label}
+      </span>
+      <span
+        className={`text-[13px] text-ghost ${mono ? "font-mono tracking-[-0.26px]" : ""}`}
+      >
+        {value}
+      </span>
+    </span>
   );
 }
 
@@ -98,13 +131,13 @@ function RatesMatrix({
 }) {
   const scopes = ["inclusive", "exclusive"];
   return (
-    <Card brutalist className="p-0 overflow-hidden">
+    <div className="glass glass-rim rounded-md overflow-hidden shadow-[var(--shadow-lift)]">
       <div className="grid grid-cols-[120px_repeat(4,1fr)] divide-x divide-mist-08">
-        <div className="bg-black px-4 py-4" />
+        <div className="px-4 py-4" />
         {LEVELS.map((l) => (
           <div
             key={l}
-            className="bg-black px-4 py-4 font-mono text-[12px] uppercase tracking-[0.7px] text-whisper"
+            className="px-4 py-4 font-mono text-[12px] uppercase tracking-[0.7px] text-whisper"
           >
             {LEVEL_LABEL[l]}
           </div>
@@ -113,7 +146,7 @@ function RatesMatrix({
           <Row key={scope} scope={scope} rates={rates[scope] ?? {}} />
         ))}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -126,20 +159,24 @@ function Row({
 }) {
   return (
     <>
-      <div className="border-t border-mist-08 px-4 py-6 font-mono text-[12px] uppercase tracking-[0.7px] text-ghost">
+      <div className="border-t border-mist-08 px-4 py-7 font-mono text-[12px] uppercase tracking-[0.7px] text-ghost">
         {scope}
       </div>
       {LEVELS.map((l) => {
         const value = rates[l] ?? 0;
-        const isExact = l === "exact";
+        const high = value >= 0.9;
         return (
           <div
             key={l}
-            className={`border-t border-mist-08 px-4 py-6 ${
-              isExact && value > 0.9 ? "bg-[var(--color-cyan-glow)]" : ""
+            className={`relative border-t border-mist-08 px-4 py-7 ${
+              high ? "bg-[var(--color-cyan-glow)]" : ""
             }`}
           >
-            <div className="font-mono text-2xl tracking-[-0.48px] text-white">
+            <div
+              className={`font-mono text-2xl md:text-3xl tracking-[-0.04em] ${
+                high ? "text-cyan" : "text-white"
+              }`}
+            >
               {formatPercent(value)}
             </div>
           </div>
