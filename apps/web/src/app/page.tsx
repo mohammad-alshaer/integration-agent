@@ -47,19 +47,22 @@ export default function HomePage() {
               </p>
             </Link>
 
-            <div className="block rounded-md border border-mist-04 bg-black/50 p-8 cursor-not-allowed">
+            <Link
+              href="/map"
+              className="group block rounded-md border border-mist-10 bg-black p-8 hover:border-cyan/40 hover:shadow-[var(--shadow-brutalist)] transition-all"
+            >
               <p className="font-mono text-[12px] uppercase tracking-[0.7px] text-whisper">
-                02 / coming in m4.2
+                02 / live · runs the graph
               </p>
-              <h2 className="mt-4 text-2xl font-medium leading-tight text-phantom">
+              <h2 className="mt-4 text-2xl font-medium leading-tight text-white group-hover:text-cyan transition-colors">
                 Map a target table
               </h2>
-              <p className="mt-3 text-base text-phantom leading-relaxed">
+              <p className="mt-3 text-base text-ghost leading-relaxed">
                 Submit source + target SchemaProfile JSON, pick a target table,
                 run the LangGraph pipeline. Returns MappingSpecs with SQL,
-                pattern classifications, validation summary.
+                pattern classifications, and validation pass-rates.
               </p>
-            </div>
+            </Link>
           </div>
 
           <div className="border-t border-mist-06 py-8 font-mono text-[11px] tracking-[0.55px] text-whisper">

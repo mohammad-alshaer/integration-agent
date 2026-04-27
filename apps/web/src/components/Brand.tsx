@@ -19,9 +19,9 @@ export function Brand() {
             <Link href="/eval" className="text-ghost hover:text-white transition-colors">
               evaluations
             </Link>
-            <span className="text-phantom cursor-not-allowed" title="Coming in M4.2">
+            <Link href="/map" className="text-ghost hover:text-white transition-colors">
               map
-            </span>
+            </Link>
           </nav>
         </div>
       </Container>
