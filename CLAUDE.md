@@ -236,7 +236,7 @@ curl -i -X OPTIONS localhost:8000/map -H "Origin: http://localhost:3000" -H "Acc
 ## Current status (commit log, newest first)
 
 ```
-<pending> Refresh CLAUDE.md for M3-complete state                          (137 tests)
+e262e7d  Refresh CLAUDE.md for M3-complete state                          (137 tests)
 36a429f  M3: FastAPI service layer wrapping the M2 mapping graph           (137 tests)
 b99b19f  Fill in M2-complete CLAUDE.md refresh hash                        (130 tests)
 7557795  Refresh CLAUDE.md for M2-complete state                           (130 tests)
