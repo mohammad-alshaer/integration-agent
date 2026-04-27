@@ -79,12 +79,14 @@ Integration-Agent/
 │   └── smoke_graph.py               FakeLLM end-to-end: graph -> validator-triggered retry -> dbt emit -> dbt build. Zero network, zero quota. The canonical offline verification.
 │
 ├── apps/
-│   └── worker/                      typer CLI (integration-agent-worker)
-│                                    subcommands: profile, run, version
+│   ├── worker/                      typer CLI (integration-agent-worker)
+│   │                                subcommands: profile, run, version
+│   └── api/                         FastAPI service (integration-agent-api)
+│                                    endpoints: GET /health [+?deep], POST /map, GET /eval[/{run_id}]
 │
 ├── packages/
 │   ├── schemas/                     Pydantic contracts: profile, candidates, patterns,
-│   │                                mapping, validation, trace. The contract between specialists.
+│   │                                mapping, validation, trace, api. The contract between specialists.
 │   ├── sqlserver/                   connect, introspect (INFORMATION_SCHEMA + sys.extended_properties),
 │   │                                profile_stats, sample (FK-closure -> Parquet), redaction
 │   ├── agents/                      LLMClient + GeminiProvider + SHA-256 cache; Embedder (Voyage + Gemini);
@@ -93,8 +95,7 @@ Integration-Agent/
 │   ├── generators/                  PatternGenerator Protocol + Rename/Concat/Derived. GenerationContext carries optional error_hints for DerivedGenerator retries.
 │   ├── validator/                   Sandbox (DuckDB in-memory OR persistent) + error_hints normalizer + ValidationRunner. Fills MappingSpec.validation_pass_rate.
 │   ├── dbt_emit/                    project.py + profiles.py + model.py + schema_yml.py + emitter.py. Emits a dbt-duckdb project from a MappingSpec list.
-│   ├── evals/                       models.py + golden.py (YAML loader) + scorer.py (3 match levels, per-pattern, disputed filter) + runner.py + cli.py. Produces eval_report.json.
-│   └── (M3+: add api/, etc.)
+│   └── evals/                       models.py + golden.py (YAML loader) + scorer.py (3 match levels, per-pattern, disputed filter) + runner.py + cli.py. Produces eval_report.json.
 │
 ├── benchmarks/
 │   └── adventureworks/
@@ -103,7 +104,8 @@ Integration-Agent/
 │       └── out/                     gitignored; dbt project + eval report
 │
 ├── docs/adr/                        0001-langgraph, 0002-duckdb-unified-store,
-│                                    0003-duckdb-parquet-sandbox, 0004-prompt-hash-caching
+│                                    0003-duckdb-parquet-sandbox, 0004-prompt-hash-caching,
+│                                    0005-fastapi-service-layer
 │
 ├── tmp/                             gitignored; ad-hoc outputs
 └── description.txt                  Mohammad's original project description
@@ -115,7 +117,7 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ./.venv/Scripts/python.exe -m pip install -e . \
   -e packages/schemas -e packages/sqlserver -e packages/agents \
   -e packages/generators -e packages/validator -e packages/dbt_emit \
-  -e packages/evals -e apps/worker
+  -e packages/evals -e apps/worker -e apps/api
 ```
 
 ---
@@ -128,7 +130,8 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 # Lint + format + tests (run manually — pre-commit is dropped on this machine)
 ./.venv/Scripts/python.exe -m ruff check .
 ./.venv/Scripts/python.exe -m ruff format .
-./.venv/Scripts/python.exe -m pytest packages/ -q    # 104 tests at M1-complete
+./.venv/Scripts/python.exe -m pytest packages/ -q       # 130 tests at M2-complete
+./.venv/Scripts/python.exe -m pytest apps/api/tests -q  # 7 API tests (FakeLLM, offline, ~3s)
 
 # Smoke tests (all green; smoke_graph.py in particular is the offline DoD)
 ./.venv/Scripts/python.exe scripts/check_sqlserver.py
@@ -168,6 +171,17 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 
 # Re-emit + dbt build from a cached eval report (no LLM cost; reconstructs MappingSpecs from eval_report.json)
 # See the inline pattern used at end-of-M1; consider promoting to a `scripts/dbt_build_from_report.py` if reused.
+
+# Run the FastAPI service locally (M3). Requires GEMINI_API_KEY in .env to actually serve /map.
+./.venv/Scripts/python.exe -m uvicorn api.main:app --reload
+# OR via the project script entry point:
+./.venv/Scripts/integration-agent-api.exe
+
+# Smoke the API (no LLM cost — /health and /eval don't hit any provider):
+curl -s localhost:8000/health | python -m json.tool
+curl -s localhost:8000/eval | python -m json.tool
+# CORS preflight from the M4 Next.js dev origin:
+curl -i -X OPTIONS localhost:8000/map -H "Origin: http://localhost:3000" -H "Access-Control-Request-Method: POST"
 ```
 
 ---

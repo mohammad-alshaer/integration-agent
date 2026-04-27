@@ -1,0 +1,28 @@
+[project]
+name = "integration-agent-api"
+version = "0.1.0"
+description = "FastAPI service layer wrapping the M2 mapping graph"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "integration-agent-schemas",
+    "integration-agent-agents",
+    "integration-agent-evals",
+    "integration-agent-validator",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+    "pydantic-settings>=2.5",
+    "truststore>=0.10",
+    "python-dotenv>=1.0",
+    "langgraph>=0.2,<0.3",
+]
+
+[project.scripts]
+integration-agent-api = "api.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

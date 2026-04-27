@@ -5,6 +5,7 @@ Pattern Classifier, Transformation Generator, and Validator. Change them
 reluctantly; every change ripples through prompts.
 """
 
+from schemas.api import EvalSummary, HealthResponse, MapRequest, MapResponse
 from schemas.candidates import CandidateSet, MatchCandidate
 from schemas.mapping import DbtTest, MappingProposal, MappingSpec
 from schemas.patterns import Pattern, PatternClassification
@@ -26,6 +27,10 @@ __all__ = [
     "DecisionTrace",
     "ErrorHint",
     "ErrorKind",
+    "EvalSummary",
+    "HealthResponse",
+    "MapRequest",
+    "MapResponse",
     "MappingProposal",
     "MappingSpec",
     "MatchCandidate",
