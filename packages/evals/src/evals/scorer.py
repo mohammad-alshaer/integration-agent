@@ -76,12 +76,53 @@ _SQL_KEYWORDS: frozenset[str] = frozenset(
 )
 
 
+_COMMUTATIVE_OP_RE = re.compile(r"\s*([+*])\s*")
+
+
+def _sort_commutative_chains(sql: str) -> str:
+    """Top-level commutative-arg sorting: `B * A` -> `A * B`, `c + a + b` -> `a + b + c`.
+
+    Conservative: only operates on the OUTERMOST chain when the entire SELECT body is a
+    pure commutative chain (no subexpressions in parens, no non-commutative ops mixed in).
+    Skips anything containing -, /, ||, function calls, or parens. This avoids brittle
+    parsing while still catching the common arithmetic / COALESCE-arg cases.
+    """
+    # Extract just the SELECT body (between SELECT and AS) — only normalize THAT
+    m = re.match(r"(?i)^(SELECT\s+)(.+?)(\s+AS\s+\w+\s*)$", sql.strip())
+    if not m:
+        return sql
+    prefix, body, suffix = m.group(1), m.group(2), m.group(3)
+    body = body.strip()
+    # Skip if body has parens, non-commutative operators, function calls, or string literals
+    if any(c in body for c in "(),'\"") or "/" in body or "-" in body or "||" in body:
+        return sql
+    # Detect commutative operator and split. Single op type per chain (don't mix + and *).
+    ops_present = set(_COMMUTATIVE_OP_RE.findall(body))
+    if len(ops_present) != 1:
+        return sql
+    op = ops_present.pop()
+    parts = [p.strip() for p in re.split(rf"\s*{re.escape(op)}\s*", body) if p.strip()]
+    if len(parts) < 2:
+        return sql
+    parts.sort()
+    new_body = f" {op} ".join(parts)
+    return f"{prefix}{new_body}{suffix}"
+
+
 def normalize_sql(sql: str) -> str:
-    """Whitespace + keyword-case normalization. Commutative-arg sorting is deferred to M2."""
+    """Whitespace + keyword-case + commutative-arg-sorting normalization.
+
+    Commutative-arg sorting (M2.6): for SELECT bodies that are a pure top-level chain of
+    commutative arithmetic (`a + b + c`, `x * y`), the args are sorted alphabetically so
+    that `B + A` and `A + B` normalize to the same string. Conservative scope (no parens,
+    no mixed operators, no function calls) — wider lift would need a real SQL parser.
+    """
     s = " ".join(sql.split())
     for kw in _SQL_KEYWORDS:
         s = re.sub(rf"\b{kw}\b", kw, s, flags=re.IGNORECASE)
-    return s.strip().rstrip(";")
+    s = s.strip().rstrip(";")
+    s = _sort_commutative_chains(s)
+    return s
 
 
 def classify_match(

@@ -89,6 +89,37 @@ def test_normalize_sql_handles_case_expression() -> None:
     assert " END AS col" in out
 
 
+def test_normalize_sql_sorts_commutative_addition() -> None:
+    """M2.6: B + A normalizes to A + B."""
+    a = normalize_sql("SELECT B + A AS sum_col")
+    b = normalize_sql("SELECT A + B AS sum_col")
+    assert a == b
+    assert a == "SELECT A + B AS sum_col"
+
+
+def test_normalize_sql_sorts_commutative_multiplication_chain() -> None:
+    """M2.6: c * a * b normalizes to a * b * c."""
+    a = normalize_sql("SELECT c * a * b AS prod_col")
+    b = normalize_sql("SELECT a * b * c AS prod_col")
+    assert a == b
+    assert a == "SELECT a * b * c AS prod_col"
+
+
+def test_normalize_sql_does_not_sort_non_commutative_subtraction() -> None:
+    """M2.6 conservative: skip when - is present (non-commutative)."""
+    a = normalize_sql("SELECT B - A AS diff_col")
+    b = normalize_sql("SELECT A - B AS diff_col")
+    # Different mathematical results; normalization must NOT equate them
+    assert a != b
+
+
+def test_normalize_sql_does_not_sort_when_parens_present() -> None:
+    """M2.6 conservative: skip parenthesized subexpressions to avoid bad parsing."""
+    out = normalize_sql("SELECT (B + A) * C AS result")
+    # Should NOT mangle: parens trigger the conservative skip
+    assert "(B + A)" in out
+
+
 # ---------- classify_match ----------
 
 
