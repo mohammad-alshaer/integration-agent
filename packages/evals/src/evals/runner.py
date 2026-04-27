@@ -100,26 +100,32 @@ def run_eval(cfg: RunnerConfig) -> EvalReport:
     try:
         final_state = graph.invoke(initial)
         specs: list[MappingSpec] = final_state.get("specs", [])
+
+        run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+        pipeline_calls = int(getattr(llm, "total_calls", 0) or 0)
+        pipeline_cache_hits = int(getattr(llm, "total_cache_hits", 0) or 0)
+        pipeline_cache_hit_rate = (
+            pipeline_cache_hits / pipeline_calls if pipeline_calls > 0 else None
+        )
+        # Pass sandbox + source_profile to score() so the M2.4 SQL_EXEC_EQUIVALENT level
+        # can execute both canonical and actual SQL against the live sandbox.
+        report = score(
+            expected_file,
+            specs,
+            provider=cfg.provider,
+            model=cfg.model,
+            run_id=run_id,
+            pipeline_total_llm_calls=pipeline_calls,
+            pipeline_total_tokens_in=int(getattr(llm, "total_tokens_in", 0) or 0),
+            pipeline_total_tokens_out=int(getattr(llm, "total_tokens_out", 0) or 0),
+            pipeline_cache_hit_rate=pipeline_cache_hit_rate,
+            sandbox=sandbox,
+            source_profile=source,
+        )
     finally:
         store.close()
         if sandbox is not None:
             sandbox.close()
-
-    run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
-    pipeline_calls = int(getattr(llm, "total_calls", 0) or 0)
-    pipeline_cache_hits = int(getattr(llm, "total_cache_hits", 0) or 0)
-    pipeline_cache_hit_rate = (pipeline_cache_hits / pipeline_calls) if pipeline_calls > 0 else None
-    report = score(
-        expected_file,
-        specs,
-        provider=cfg.provider,
-        model=cfg.model,
-        run_id=run_id,
-        pipeline_total_llm_calls=pipeline_calls,
-        pipeline_total_tokens_in=int(getattr(llm, "total_tokens_in", 0) or 0),
-        pipeline_total_tokens_out=int(getattr(llm, "total_tokens_out", 0) or 0),
-        pipeline_cache_hit_rate=pipeline_cache_hit_rate,
-    )
 
     cfg.out.parent.mkdir(parents=True, exist_ok=True)
     cfg.out.write_text(report.model_dump_json(indent=2), encoding="utf-8")

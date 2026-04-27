@@ -54,6 +54,7 @@ class ExpectedMappingsFile(BaseModel):
 class MatchLevel(StrEnum):
     EXACT = "exact"
     PATTERN = "pattern"
+    SQL_EXEC_EQUIVALENT = "sql_exec_equivalent"
     SQL_SEMANTIC = "sql_semantic"
     MISMATCH = "mismatch"
     MISSING = "missing"
@@ -83,6 +84,7 @@ class EvalReport(BaseModel):
     actual_count: int
     exact_match_count: int
     pattern_match_count: int
+    sql_exec_equivalent_match_count: int = 0
     sql_semantic_match_count: int
     missing_count: int
     extra_count: int

@@ -23,7 +23,7 @@ from evals.models import (
     MatchLevel,
     ScoreEntry,
 )
-from schemas import MappingSpec
+from schemas import MappingSpec, Pattern, SchemaProfile
 
 _SQL_KEYWORDS: frozenset[str] = frozenset(
     {
@@ -84,19 +84,34 @@ def normalize_sql(sql: str) -> str:
     return s.strip().rstrip(";")
 
 
-def classify_match(expected: ExpectedMapping, actual: MappingSpec | None) -> MatchLevel:
+def classify_match(
+    expected: ExpectedMapping,
+    actual: MappingSpec | None,
+    *,
+    sandbox=None,
+    source_profile: SchemaProfile | None = None,
+) -> MatchLevel:
     if actual is None:
         return MatchLevel.MISSING
     a_set = frozenset(actual.source_fqns)
     # EXACT can match either the primary expected form OR any accepted alternative
     # (semantically-equivalent stylistic variant). Only EXACT is widened — PATTERN /
-    # SQL_SEMANTIC / MISMATCH are measured against the primary so per-pattern bucket
-    # counts stay honest.
+    # SQL_EXEC_EQUIVALENT / SQL_SEMANTIC / MISMATCH are measured against the primary so
+    # per-pattern bucket counts stay honest.
     forms = [(expected.expected_pattern, frozenset(expected.expected_source_fqns))]
     forms += [(alt.pattern, frozenset(alt.source_fqns)) for alt in expected.accepted_alternatives]
     for pat, src_set in forms:
         if actual.pattern == pat and a_set == src_set:
             return MatchLevel.EXACT
+    # SQL_EXEC_EQUIVALENT: executing both canonical (built from expected) and actual SQL
+    # yields the same result rows. Truer signal than PATTERN (which only checks the pattern
+    # enum) or SQL_SEMANTIC (which only checks token containment). Checked BEFORE PATTERN
+    # so it can upgrade a "same pattern, different source" case to a stronger semantic match.
+    # Only fires when sandbox is supplied AND validation passed AND the expected pattern has
+    # a canonical-SQL synthesis (RENAME or CONCAT — DERIVED has no canonical form in the golden).
+    if sandbox is not None and actual.validation_pass_rate == 1.0:
+        if _exec_results_equal(expected, actual, sandbox, source_profile):
+            return MatchLevel.SQL_EXEC_EQUIVALENT
     if expected.expected_pattern == actual.pattern:
         return MatchLevel.PATTERN
     norm = normalize_sql(actual.sql)
@@ -104,6 +119,60 @@ def classify_match(expected: ExpectedMapping, actual: MappingSpec | None) -> Mat
     if tokens and all(re.search(rf"\b{re.escape(t)}\b", norm) for t in tokens):
         return MatchLevel.SQL_SEMANTIC
     return MatchLevel.MISMATCH
+
+
+def _build_canonical_sql(expected: ExpectedMapping, sandbox) -> tuple[str, str] | None:
+    """For RENAME/CONCAT, build (canonical_sql, view_name). Returns None for DERIVED."""
+    if not expected.expected_source_fqns:
+        return None
+    tables = {tuple(fqn.split(".")[:2]) for fqn in expected.expected_source_fqns}
+    if len(tables) != 1:
+        return None  # multi-table canonical synthesis not in M2.4 scope
+    (schema, table) = next(iter(tables))
+    view = sandbox.view_for(schema, table) if hasattr(sandbox, "view_for") else None
+    if view is None:
+        return None
+    if expected.expected_pattern == Pattern.RENAME and len(expected.expected_source_fqns) == 1:
+        col = expected.expected_source_fqns[0].rsplit(".", 1)[-1]
+        return (f"SELECT {col}", view)
+    if expected.expected_pattern == Pattern.CONCAT and len(expected.expected_source_fqns) >= 2:
+        cols = [fqn.rsplit(".", 1)[-1] for fqn in expected.expected_source_fqns]
+        return (f"SELECT concat_ws(' ', {', '.join(cols)})", view)
+    return None
+
+
+def _exec_results_equal(
+    expected: ExpectedMapping,
+    actual: MappingSpec,
+    sandbox,
+    source_profile: SchemaProfile | None,
+    row_limit: int = 100,
+) -> bool:
+    """Run both canonical and actual SQL, compare result rows."""
+    canonical = _build_canonical_sql(expected, sandbox)
+    if canonical is None:
+        return False
+    canonical_sql, canonical_view = canonical
+    try:
+        canonical_rows = sandbox.con.execute(
+            f"{canonical_sql} FROM {canonical_view} LIMIT {row_limit}"
+        ).fetchall()
+    except Exception:
+        return False
+    # Reuse the validator's resolver for the actual SQL — it handles single-table + JOIN.
+    from validator.runner import _resolve_from
+
+    fc = _resolve_from(actual, sandbox, source_profile)
+    if not fc.resolved:
+        return False
+    try:
+        actual_rows = sandbox.con.execute(
+            f"{actual.sql} FROM {fc.view} LIMIT {row_limit}"
+        ).fetchall()
+    except Exception:
+        return False
+    # Sort both for stable comparison (DuckDB row order isn't guaranteed across queries).
+    return sorted(map(repr, canonical_rows)) == sorted(map(repr, actual_rows))
 
 
 def _build_entry(
@@ -143,15 +212,17 @@ def _rate(num: int, den: int) -> float:
 
 
 def _compute_rates(entries: list[ScoreEntry]) -> dict[str, float]:
-    """Per-entry match rates across the supplied (already-filtered) list."""
+    """Per-entry match rates across the supplied (already-filtered) list. Cumulative."""
     n = sum(1 for e in entries if e.level != MatchLevel.EXTRA)
     exact = sum(1 for e in entries if e.level == MatchLevel.EXACT)
     pattern_only = sum(1 for e in entries if e.level == MatchLevel.PATTERN)
+    sql_exec = sum(1 for e in entries if e.level == MatchLevel.SQL_EXEC_EQUIVALENT)
     sql_semantic = sum(1 for e in entries if e.level == MatchLevel.SQL_SEMANTIC)
     return {
         "exact": _rate(exact, n),
         "pattern": _rate(exact + pattern_only, n),
-        "sql_semantic": _rate(exact + pattern_only + sql_semantic, n),
+        "sql_exec_equivalent": _rate(exact + pattern_only + sql_exec, n),
+        "sql_semantic": _rate(exact + pattern_only + sql_exec + sql_semantic, n),
     }
 
 
@@ -166,6 +237,8 @@ def score(
     pipeline_total_tokens_in: int = 0,
     pipeline_total_tokens_out: int = 0,
     pipeline_cache_hit_rate: float | None = None,
+    sandbox=None,
+    source_profile: SchemaProfile | None = None,
 ) -> EvalReport:
     actual_by_fqn: dict[str, MappingSpec] = {s.target_fqn: s for s in actual_specs}
 
@@ -174,7 +247,7 @@ def score(
     for exp in expected_file.mappings:
         expected_fqns.add(exp.target_fqn)
         actual = actual_by_fqn.get(exp.target_fqn)
-        level = classify_match(exp, actual)
+        level = classify_match(exp, actual, sandbox=sandbox, source_profile=source_profile)
         entries.append(_build_entry(exp, actual, level))
 
     for spec in actual_specs:
@@ -183,6 +256,9 @@ def score(
 
     exact_count = sum(1 for e in entries if e.level == MatchLevel.EXACT)
     pattern_only_count = sum(1 for e in entries if e.level == MatchLevel.PATTERN)
+    sql_exec_equivalent_count = sum(
+        1 for e in entries if e.level == MatchLevel.SQL_EXEC_EQUIVALENT
+    )
     sql_semantic_count = sum(1 for e in entries if e.level == MatchLevel.SQL_SEMANTIC)
     mismatch_count = sum(1 for e in entries if e.level == MatchLevel.MISMATCH)
     missing_count = sum(1 for e in entries if e.level == MatchLevel.MISSING)
@@ -204,6 +280,7 @@ def score(
                 "expected": 0,
                 "exact": 0,
                 "pattern_only": 0,
+                "sql_exec_equivalent": 0,
                 "sql_semantic": 0,
                 "mismatch": 0,
                 "missing": 0,
@@ -214,6 +291,8 @@ def score(
             bucket["exact"] += 1
         elif e.level == MatchLevel.PATTERN:
             bucket["pattern_only"] += 1
+        elif e.level == MatchLevel.SQL_EXEC_EQUIVALENT:
+            bucket["sql_exec_equivalent"] += 1
         elif e.level == MatchLevel.SQL_SEMANTIC:
             bucket["sql_semantic"] += 1
         elif e.level == MatchLevel.MISMATCH:
@@ -242,6 +321,7 @@ def score(
         actual_count=len(actual_specs),
         exact_match_count=exact_count,
         pattern_match_count=pattern_only_count,
+        sql_exec_equivalent_match_count=sql_exec_equivalent_count,
         sql_semantic_match_count=sql_semantic_count,
         missing_count=missing_count,
         extra_count=extra_count,

@@ -122,6 +122,75 @@ def test_classify_match_mismatch_when_nothing_lines_up() -> None:
     assert classify_match(exp, actual) == MatchLevel.MISMATCH
 
 
+# ---------- SQL_EXEC_EQUIVALENT (M2.4) ----------
+
+
+class _FakeSandbox:
+    """Minimal sandbox for SQL_EXEC_EQUIVALENT tests — mirrors the validator.Sandbox API."""
+
+    def __init__(self, views_to_rows: dict[str, list[tuple]]) -> None:
+        self._views = views_to_rows
+        self.con = self  # We mock con.execute() too
+
+    def view_for(self, schema: str, table: str) -> str | None:
+        v = f"main_staging.{schema}_{table}"
+        return v if v in self._views else None
+
+    def execute(self, sql: str) -> "_FakeSandbox":
+        # Minimal SQL parser — find which view name the query references
+        for view, rows in self._views.items():
+            if view in sql:
+                # Crude: extract column expression after SELECT, before FROM
+                # For test simplicity, just return the rows verbatim
+                if "concat_ws" in sql:
+                    # Concatenate all the row tuples as " "-joined strings
+                    self._next_rows = [
+                        (" ".join(str(v) for v in row),) for row in rows
+                    ]
+                else:
+                    # Pick first column for SELECT <col> queries (good enough for tests)
+                    self._next_rows = [(row[0],) for row in rows]
+                return self
+        self._next_rows = []
+        return self
+
+    def fetchall(self) -> list[tuple]:
+        return self._next_rows
+
+
+def test_classify_match_sql_exec_equivalent_for_rename_with_different_source() -> None:
+    """Classifier picked the wrong source FQN but execution yields the same rows."""
+    exp = _expected("dbo.T.c", Pattern.RENAME, ["s.S.real_col"])
+    # Actual picked a different source but the SQL happens to produce the same rows
+    actual = _spec("dbo.T.c", ["s.S.different"], Pattern.RENAME, "SELECT different AS c")
+    sandbox = _FakeSandbox(
+        {"main_staging.s_S": [(1,), (2,), (3,)]}  # all 3 rows
+    )
+    # Both queries resolve to selecting "first column" of the same view -> equal rows
+    assert classify_match(exp, actual, sandbox=sandbox) == MatchLevel.SQL_EXEC_EQUIVALENT
+
+
+def test_classify_match_skips_sql_exec_when_validation_failed() -> None:
+    """SQL_EXEC_EQUIVALENT requires actual_validation_pass_rate == 1.0."""
+    exp = _expected("dbo.T.c", Pattern.RENAME, ["s.S.real_col"])
+    actual = _spec(
+        "dbo.T.c", ["s.S.different"], Pattern.RENAME, "SELECT different AS c", pass_rate=0.5
+    )
+    sandbox = _FakeSandbox({"main_staging.s_S": [(1,), (2,)]})
+    # pass_rate < 1.0 → don't bother executing, fall through to SQL_SEMANTIC/MISMATCH
+    level = classify_match(exp, actual, sandbox=sandbox)
+    assert level != MatchLevel.SQL_EXEC_EQUIVALENT
+
+
+def test_classify_match_sql_exec_returns_false_for_derived_no_canonical() -> None:
+    """DERIVED has no canonical-SQL synthesis — falls through to SQL_SEMANTIC."""
+    exp = _expected("dbo.T.c", Pattern.DERIVED, ["s.S.a", "s.S.b"])
+    actual = _spec("dbo.T.c", ["s.S.a"], Pattern.RENAME, "SELECT a + b AS c")
+    sandbox = _FakeSandbox({"main_staging.s_S": [(1,), (2,)]})
+    # DERIVED expected → _build_canonical_sql returns None → falls to SQL_SEMANTIC
+    assert classify_match(exp, actual, sandbox=sandbox) == MatchLevel.SQL_SEMANTIC
+
+
 # ---------- multi-acceptable goldens (M2.1) ----------
 
 
@@ -285,6 +354,7 @@ def test_score_per_pattern_breakdown() -> None:
         "expected": 2,
         "exact": 1,
         "pattern_only": 1,
+        "sql_exec_equivalent": 0,
         "sql_semantic": 0,
         "mismatch": 0,
         "missing": 0,
