@@ -8,10 +8,11 @@ from agents.semantic_matcher import (
     MatcherOutput,
     RerankedCandidate,
     _embedding_only_candidate_set,
+    _fk_extend_neighbors,
     _match_one,
 )
 from agents.vector_store import Neighbor
-from schemas import ColumnProfile
+from schemas import ColumnProfile, SchemaProfile, TableProfile
 
 
 def _target(
@@ -129,3 +130,105 @@ class TestMatchOneEmptyNeighbors:
         cs = out[target.fqn]
         assert cs.no_match is True
         assert cs.candidates == []
+
+
+def _src_col(*, schema: str, table: str, name: str, sql_type: str = "money", fk_ref: str | None = None) -> ColumnProfile:
+    return ColumnProfile(
+        table_schema=schema,
+        table_name=table,
+        column_name=name,
+        ordinal_position=1,
+        sql_type=sql_type,
+        is_nullable=True,
+        is_primary_key=False,
+        is_foreign_key=fk_ref is not None,
+        fk_ref=fk_ref,
+        null_rate=0.0,
+        distinct_count=0,
+        total_count=0,
+    )
+
+
+class TestFkExtendNeighbors:
+    """M2.3.x: after top-K retrieval, append candidates from FK-linked tables."""
+
+    def _profile_header_detail_fk(self) -> SchemaProfile:
+        return SchemaProfile(
+            database_name="AdventureWorks2022",
+            role="source",
+            tables=[
+                TableProfile(
+                    table_schema="Sales",
+                    table_name="SalesOrderHeader",
+                    row_count_estimate=0,
+                    columns=[
+                        _src_col(schema="Sales", table="SalesOrderHeader", name="SalesOrderID", sql_type="int"),
+                        _src_col(schema="Sales", table="SalesOrderHeader", name="TaxAmt"),
+                        _src_col(schema="Sales", table="SalesOrderHeader", name="SubTotal"),
+                    ],
+                ),
+                TableProfile(
+                    table_schema="Sales",
+                    table_name="SalesOrderDetail",
+                    row_count_estimate=0,
+                    columns=[
+                        _src_col(
+                            schema="Sales",
+                            table="SalesOrderDetail",
+                            name="SalesOrderID",
+                            sql_type="int",
+                            fk_ref="Sales.SalesOrderHeader.SalesOrderID",
+                        ),
+                        _src_col(schema="Sales", table="SalesOrderDetail", name="LineTotal"),
+                        _src_col(schema="Sales", table="SalesOrderDetail", name="UnitPrice"),
+                    ],
+                ),
+            ],
+            profiled_at="2026-04-27T00:00:00+00:00",
+        )
+
+    def test_fk_extension_appends_detail_columns_when_top_k_is_header(self) -> None:
+        # TaxAmt target's natural top-K has only Header columns; FK-extension should add Detail
+        target = _target("dbo.FactInternetSales.TaxAmt", "money")
+        neighbors = [
+            _nb("Sales.SalesOrderHeader.TaxAmt", "money", d=0.3),
+            _nb("Sales.SalesOrderHeader.SubTotal", "money", d=0.4),
+        ]
+        profile = self._profile_header_detail_fk()
+        extended = _fk_extend_neighbors(target, neighbors, profile, max_per_fk_table=3, max_total_extension=5)
+
+        ext_fqns = {nb.fqn for nb in extended[len(neighbors):]}
+        # Should include Detail.LineTotal and Detail.UnitPrice (both money/numeric)
+        assert "Sales.SalesOrderDetail.LineTotal" in ext_fqns
+        # Original neighbors are preserved at the front
+        assert extended[0].fqn == "Sales.SalesOrderHeader.TaxAmt"
+        # Extensions have the artificial high distance
+        for nb in extended[len(neighbors):]:
+            assert nb.distance == 0.999
+
+    def test_fk_extension_skips_already_seen_tables(self) -> None:
+        # If both Header and Detail are already in top-K, FK extension shouldn't duplicate
+        target = _target("dbo.FactInternetSales.TaxAmt", "money")
+        neighbors = [
+            _nb("Sales.SalesOrderHeader.TaxAmt", "money", d=0.3),
+            _nb("Sales.SalesOrderDetail.LineTotal", "numeric(38,6)", d=0.4),
+        ]
+        profile = self._profile_header_detail_fk()
+        extended = _fk_extend_neighbors(target, neighbors, profile)
+        # Both seen tables already — no extensions
+        assert len(extended) == len(neighbors)
+
+    def test_fk_extension_filters_by_type_compatibility(self) -> None:
+        # If target is numeric, don't surface VARCHAR columns from the FK-linked table
+        target = _target("dbo.FactInternetSales.TaxAmt", "money")
+        neighbors = [_nb("Sales.SalesOrderHeader.TaxAmt", "money", d=0.3)]
+        # Add a string column to Detail that should NOT be extended
+        profile = self._profile_header_detail_fk()
+        profile.tables[1].columns.append(
+            _src_col(schema="Sales", table="SalesOrderDetail", name="CarrierTrackingNumber", sql_type="nvarchar(25)")
+        )
+        extended = _fk_extend_neighbors(target, neighbors, profile)
+        ext_fqns = {nb.fqn for nb in extended[len(neighbors):]}
+        assert "Sales.SalesOrderDetail.CarrierTrackingNumber" not in ext_fqns
+        assert "Sales.SalesOrderDetail.LineTotal" in ext_fqns
+

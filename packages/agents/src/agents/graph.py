@@ -108,6 +108,7 @@ def build_graph(
             llm,
             k=k_candidates,
             rate_limit_delay_sec=rate_limit_delay_sec,
+            source_profile=state["source_profile"],
         )
         return {"candidate_sets": cs}
 
