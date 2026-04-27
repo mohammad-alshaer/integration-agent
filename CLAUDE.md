@@ -2,13 +2,17 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** **M2 COMPLETE** (umbrella tag `m2-complete` on the same commit as `m2.7-complete`). The full M2 series shipped: M1 → M2.1 → M2.1.x → M2.2 → M2.3 → M2.3.x → M2.4 → M2.5 → M2.6 → M2.7. Real-LLM accuracy on AdventureWorks (Gemini 2.5 Flash, paid tier-1): **78.9% inclusive / 96.7% exclusive** exact match (M0 baseline 65.8% / 83.3%; +13.1pp inclusive across M2). PATTERN 84.2% / 100.0%, SQL_SEMANTIC 89.5% / 100.0% (every non-disputed spec gets the right pattern + tokens). RENAME 29/30 EXACT, DERIVED 1/8 EXACT (last 7 = disputed XML/aggregation/cross-table cases out of M2 scope). The M2.2 multi-source JOIN infrastructure (validator FK-aware FROM, dbt_emit `intermediate/int_*.sql` models, generator multi-source mode) is built and tested but unexercised by current goldens — TaxAmt + Freight reach PATTERN with partial sources but not full multi-source DERIVED. **9/10 dbt models build clean** (HumanResources.Employee ODBC type -151 still the known fail). New in M2.4-M2.7: SQL_EXEC_EQUIVALENT match level (4th level via DuckDB-executed comparison), `ClaudeProvider` for Gemini-vs-Claude A/B (claude-haiku-4-5 / sonnet-4-6 / opus-4-7), commutative-arg sorting in normalize_sql, pipeline_dollars_total telemetry. 40+ commits on `main`, 130 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Total M2 LLM spend across all sub-milestones: ~5 cents at Flash tier-1.
+**Current milestone:** **M3 COMPLETE** — FastAPI service layer (commit `36a429f`). The mapping graph that previously ran only via `worker run` is now reachable as an HTTP service: `GET /health [+?deep]`, `POST /map`, `GET /eval`, `GET /eval/{run_id}`. Sync handler in `asyncio.to_thread` under a global `asyncio.Lock` (DuckDB conns and `GeminiProvider` token totals aren't thread-safe), 600s hard timeout, single target table per request, inline `SchemaProfile` Pydantic in the request body, glob-based eval lookup over `benchmarks/*/out/eval_report*.json` with a 60s TTL cache, `CORSMiddleware` allowing `http://localhost:3000` so M4 plugs in. ADR `docs/adr/0005-fastapi-service-layer.md` captures the sync-in-threadpool / single-target / inline-profile / glob-lookup decisions. **137 tests passing** (130 packages + 7 new in `apps/api/tests/`, all offline via `evals._fakes` SmokeFakeLLM + ConstantEmbedder). Live smoke against `uvicorn api.main:app` confirmed real-Gemini /health, eval-by-run-id, 404 path, and CORS preflight from `Origin: http://localhost:3000`.
+
+**Prior milestone:** **M2 COMPLETE** (umbrella tag `m2-complete` on commit `3ff37a7`). The full M2 series shipped: M1 → M2.1 → M2.1.x → M2.2 → M2.3 → M2.3.x → M2.4 → M2.5 → M2.6 → M2.7. Real-LLM accuracy on AdventureWorks (Gemini 2.5 Flash, paid tier-1): **78.9% inclusive / 96.7% exclusive** exact match (M0 baseline 65.8% / 83.3%; +13.1pp inclusive across M2). PATTERN 84.2% / 100.0%, SQL_SEMANTIC 89.5% / 100.0% (every non-disputed spec gets the right pattern + tokens). RENAME 29/30 EXACT, DERIVED 1/8 EXACT (last 7 = disputed XML/aggregation/cross-table cases out of M2 scope). The M2.2 multi-source JOIN infrastructure (validator FK-aware FROM, dbt_emit `intermediate/int_*.sql` models, generator multi-source mode) is built and tested but unexercised by current goldens. **9/10 dbt models build clean** (HumanResources.Employee ODBC type -151 still the known fail). Total M2 LLM spend across all sub-milestones: ~5 cents at Flash tier-1.
 
 **Baselines preserved on disk:** `benchmarks/adventureworks/out/eval_report.m1-baseline.json`, `eval_report.m2-1-baseline.json`, `eval_report.m2-2-final.json`, `eval_report.m2-3-final.json`, `eval_report.m2-3-x-final.json`, `eval_report.m2-complete.json` (all gitignored but kept). Diff against `eval_report.json` to measure any future change.
 
-**M3 starts here:** FastAPI service layer. M2 wrapped at 78.9% inclusive / 96.7% exclusive EXACT — accuracy work is paused. Per the original stack plan: **M3 = FastAPI (expose the agent as a service); M4 = Next.js + shadcn UI**. Portfolio framing for the Dar CIO meeting shifts from "how accurate is the classifier" to "the agent runs as a service that humans + downstream systems can call." Anything still on the eval side (e.g. JOIN-aware retrieval to unlock TaxAmt/Freight EXACT, ClaudeProvider real A/B run) becomes a parallel/optional workstream — not blocking M3.
+**M4 starts here:** Next.js 14 + shadcn/ui frontend that calls the M3 service. Per the original stack plan, M4 is the browser-facing UI; the API contract is already locked (`MapRequest`/`MapResponse`/`EvalSummary` in `packages/schemas/api.py`, CORS allow-origin set to `http://localhost:3000`). Anything still on the eval side (JOIN-aware retrieval for TaxAmt/Freight EXACT, real Claude A/B run via the M2.5 ClaudeProvider) is a parallel/optional workstream — not blocking M4. Write a new plan file for M4.
 
-**Canonical evolved plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\continue-with-m2-1-from-lexical-barto.md` — describes the full M2 evolution from M2.1 through the final 5-sub-milestone finish. Write a new plan file for M3.
+**Canonical M3 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\lets-start-working-on-refactored-prism.md` — describes the FastAPI scope: 4 endpoints, sync-in-threadpool, glob-based eval lookup, CORS for the M4 dev origin. Useful context but M3 is shipped.
+
+**Canonical evolved plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\continue-with-m2-1-from-lexical-barto.md` — describes the full M2 evolution from M2.1 through the final 5-sub-milestone finish.
 
 **Canonical M1 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\i-want-to-do-jiggly-yeti.md` — describes the M1 scope; useful context but M1 is shipped. Write a new plan file for M2 work; don't edit the M1 one.
 
@@ -232,6 +236,9 @@ curl -i -X OPTIONS localhost:8000/map -H "Origin: http://localhost:3000" -H "Acc
 ## Current status (commit log, newest first)
 
 ```
+<pending> Refresh CLAUDE.md for M3-complete state                          (137 tests)
+36a429f  M3: FastAPI service layer wrapping the M2 mapping graph           (137 tests)
+b99b19f  Fill in M2-complete CLAUDE.md refresh hash                        (130 tests)
 7557795  Refresh CLAUDE.md for M2-complete state                           (130 tests)
 3ff37a7  M2.7: pipeline_dollars_total + ruff cleanup                       (130 tests)
 a19810f  M2.6: Commutative-arg sorting in normalize_sql                    (128 tests)
@@ -284,40 +291,29 @@ Public repo: https://github.com/mohammad-alshaer/integration-agent — first pus
 
 ---
 
-## What's left — M3 starts here
+## What's left — M4 starts here
 
-M2 is shipped + tagged + pushed (umbrella `m2-complete`). M3 is FastAPI per the original stack plan. Ordered by impact-to-effort:
+M3 is shipped (commit `36a429f`). M4 is the Next.js + shadcn frontend per the original stack plan. Ordered by impact-to-effort:
 
-### M3 — FastAPI service layer (THE NEXT MILESTONE)
+### M4 — Next.js 14 + shadcn UI (THE NEXT MILESTONE)
 
-Expose the agent as a service. Endpoints to consider:
-- `POST /map` — submit (source_profile, target_profile, target_table) → returns MappingSpec list (run the graph synchronously for small targets, or async with a job ID)
-- `GET /eval/{run_id}` — fetch a stored EvalReport
-- `GET /health` — basic liveness
+Browser-facing app calling the M3 API. Concrete starting set:
+- **Page 1 — `/map`**: paste/upload source + target SchemaProfile JSON, pick a target table, hit `POST /map`. Render the returned `MappingSpec[]` with pattern badges (RENAME / CONCAT / DERIVED), per-spec SQL block, classifications + validation summaries, total `elapsed_sec`. Long-request UX (10s–5min) is the load-bearing piece — start with a spinner + the 600s API timeout; streaming + job IDs are M4.x.
+- **Page 2 — `/eval`**: list `EvalSummary[]` from `GET /eval`. Click through to `GET /eval/{run_id}` for full `EvalReport` — render the rates matrix (inclusive/exclusive × exact/pattern/sql_exec/sql_semantic) and the per-spec `ScoreEntry` table with disputed-row highlighting.
+- **Page 3 — `/health`**: just `GET /health` + the `?deep=true` button.
 
-Stack: FastAPI + uvicorn. Auth: out of scope for M3 (local-only demo). Persistence: write specs/reports to DuckDB or Parquet under `apps/api/data/`. Frontend: M4 (Next.js + shadcn).
+Stack: Next.js 14 (app router), shadcn/ui, TypeScript, fetch (no need for SWR in M4), Tailwind. Auth: still out of scope. **Run side-by-side on `localhost:3000` against the API on `localhost:8000`** — CORS is already wired. Type-share: generate TS types from the FastAPI OpenAPI schema (`/openapi.json`) so `MapRequest` / `MappingSpec` / `EvalReport` stay aligned without hand-coding.
 
-### Optional M2.X parallel work (not blocking M3)
+### Optional parallel work (not blocking M4)
 
 - **JOIN-aware second-pass retrieval** to unlock TaxAmt + Freight EXACT (still ~30-50 LoC; documented in M2.3.x post-mortem). Would lift DERIVED 1/8 → 3/8 and headline 78.9% → ~83-85% inclusive.
-- **Real Claude A/B run** using the M2.5 ClaudeProvider — `python -m evals --provider claude --model claude-haiku-4-5` (~$0.30) — generates a side-by-side eval report for portfolio framing.
+- **Real Claude A/B run** using the M2.5 ClaudeProvider — `python -m evals --provider claude --model claude-haiku-4-5` (~$0.30) — generates a side-by-side eval report for portfolio framing. Will surface in `/eval` automatically once written.
 - **CustomerKey domain-alignment regression** — matcher overgeneralizes Sales.Customer vs Person.BusinessEntity. ~15 LoC fix.
+- **M3.1: streaming progress for `POST /map`** — Server-Sent Events emitting per-node graph events. Right move once M4 is in users' hands and the spinner-only UX hurts. Document as M3.1.
 
-### M2.4 — DuckDB-executed SQL equivalence (4th match level)
+### M3 retrospective — what shipped, what didn't
 
-Currently `SQL_SEMANTIC` only checks "does the normalized SQL contain every expected source column name?" — a token-level proxy. Real semantic equivalence: run both the expected and actual SQL against the sandbox and compare result sets. Bigger lift; truer signal.
-
-### M2.5 — `ClaudeProvider`
-
-~15-line `LLMClient` impl backed by `anthropic` SDK with prompt caching. Lets us A/B Flash vs Haiku 4.5 vs Sonnet 4.6 on the same golden set without changing any other code. Useful both for cost-shopping and as portfolio evidence of provider-swappable design.
-
-### M2.6 — Commutative-arg sorting in `normalize_sql`
-
-Tiny lift, modest scope (CONCAT_WS isn't commutative; benefits mostly arithmetic + COALESCE).
-
-### M2.7 — `pipeline_dollars_total` field on EvalReport
-
-Telemetry now reports tokens; per-provider price tables would convert that to dollars. Useful for M2 cost-comparison runs.
+Shipped: 4 endpoints, 7 offline tests, ADR 0005, CORS, opt-in deep health, glob-based eval lookup. Did NOT ship (deferred): job IDs, `POST /profile` (still CLI-only, 5–30 min SQL Server connection is wrong shape for HTTP), `POST /eval` to trigger eval runs (still CLI-only).
 
 ---
 
@@ -353,13 +349,24 @@ Telemetry now reports tokens; per-provider price tables would convert that to do
 
 17. **M2.7 pipeline_dollars_total** uses pricing from `packages/evals/src/evals/pricing.py`. If a provider returns 0 dollars, check the PRICING dict for that (provider, model) pair — unknown pairs default to (0.0, 0.0). Update PRICING if a provider changes their published pricing.
 
+18. **M3 lifespan tolerates missing API keys.** `apps/api/src/api/main.py` wraps the deps construction in try/except — if `GEMINI_API_KEY` (or `EMBEDDING_PROVIDER`-equivalent) is unset, lifespan logs a warning and stores `app.state.deps = None`. Routes 503 in that state. Tests rely on this: they construct `TestClient(app)` **without** the `with` context (so lifespan never runs) and override `get_deps` via `app.dependency_overrides`. If you switch tests to `with TestClient(app)`, lifespan will try to build a real `GeminiProvider` and the test will fail without a real key.
+
+19. **All `/map` requests serialize through one `asyncio.Lock`.** `apps/api/src/api/routers/map.py` holds `deps.map_lock` for the entire `_run_graph_sync` call because (a) the shared `SourceVectorStore` DuckDB connection isn't thread-safe and (b) `GeminiProvider`'s running token totals get clobbered by concurrent writers. Real concurrency needs per-request connections + per-request LLMClient — M4 territory if needed.
+
+20. **CORS allow-origin is `http://localhost:3000`** (the M4 Next.js dev server) — set in `apps/api/src/api/config.py:Settings.cors_origin`. Override via `INTEGRATION_AGENT_API_CORS_ORIGIN` env var. M5 will need real origins (and probably auth) when the API leaves localhost.
+
+21. **`store.add_columns(req.source_profile)` runs on every `/map` request.** Embedder content cache makes repeat embeddings free; the HNSW rebuild is sub-second for AdventureWorks (~500 columns). `rebuild_index=true` in the body additionally calls `store.reset()` first. If you ever pin a single source profile per process and want to skip this, gate behind a profile-hash check — but the current behavior is correct (each request reflects its profile) at trivial cost.
+
+22. **Eval lookup globs `benchmarks/*/out/eval_report*.json`** (`apps/api/src/api/eval_lookup.py`) with a 60s in-memory TTL cache. The eval runner stays untouched; existing baseline files (`eval_report.m1-baseline.json`, `eval_report.m2-complete.json`, etc.) are discovered for free. If you ever delete or rename a report file mid-conversation, call `eval_lookup.invalidate_cache()` or wait 60s.
+
 ---
 
 ## When in doubt
 
-1. **For M3 (FastAPI) work:** read the "What's left — M3 starts here" section above. Compare the eval baseline going forward against `eval_report.m2-complete.json` (78.9% / 96.7%) — M3 isn't expected to touch eval metrics, but a regression check is cheap.
-2. **For project history:** the M1 plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md` and the M2-evolution plan at `~/.claude/plans/continue-with-m2-1-from-lexical-barto.md` (final state covers M2.1 → M2.7) are reference-only.
-3. **Memory:** check `MEMORY.md` for project/feedback notes about Mohammad's preferences and corporate environment specifics.
-4. **For DataOps / Claude-specific concept questions**, explain foundational concepts (eval, RAG, dbt, embeddings, LangGraph state machines, etc.) with a concrete example tied to the current task. Mohammad is a new-grad — don't just name-drop.
-5. **Cost discipline:** Mohammad prefers free/free-tier solutions; surface cost estimates upfront on any paid-service decision. Gemini Flash paid tier-1 is already configured (~$0.30/full eval; cache makes re-runs nearly free).
-6. **Before any GitHub push:** verify no secrets in the diff. The repo is **public**; anything pushed is permanently visible.
+1. **For M4 (Next.js + shadcn) work:** read the "What's left — M4 starts here" section above. Generate TS types from the FastAPI OpenAPI schema (`localhost:8000/openapi.json`) so `MapRequest` / `MappingSpec` / `EvalReport` stay aligned. Run the API and the frontend side-by-side; CORS is already wired for `localhost:3000`.
+2. **For M3 (API) edits:** the canonical references are `apps/api/src/api/main.py` (lifespan + CORS), `apps/api/src/api/routers/{health,map,eval}.py`, and `docs/adr/0005-fastapi-service-layer.md`. The 7 offline tests in `apps/api/tests/test_routes.py` are the contract guard.
+3. **For project history:** the M1 plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md`, the M2-evolution plan at `~/.claude/plans/continue-with-m2-1-from-lexical-barto.md` (covers M2.1 → M2.7), and the M3 plan at `~/.claude/plans/lets-start-working-on-refactored-prism.md` are reference-only.
+4. **Memory:** check `MEMORY.md` for project/feedback notes about Mohammad's preferences and corporate environment specifics.
+5. **For DataOps / Claude-specific concept questions**, explain foundational concepts (eval, RAG, dbt, embeddings, LangGraph state machines, etc.) with a concrete example tied to the current task. Mohammad is a new-grad — don't just name-drop.
+6. **Cost discipline:** Mohammad prefers free/free-tier solutions; surface cost estimates upfront on any paid-service decision. Gemini Flash paid tier-1 is already configured (~$0.30/full eval; cache makes re-runs nearly free).
+7. **Before any GitHub push:** verify no secrets in the diff. The repo is **public**; anything pushed is permanently visible.
