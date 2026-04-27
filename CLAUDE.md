@@ -218,7 +218,7 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
-<pending> Refresh CLAUDE.md for M2-complete state                           (130 tests)
+7557795  Refresh CLAUDE.md for M2-complete state                           (130 tests)
 3ff37a7  M2.7: pipeline_dollars_total + ruff cleanup                       (130 tests)
 a19810f  M2.6: Commutative-arg sorting in normalize_sql                    (128 tests)
 94546da  M2.5: Add ClaudeProvider for Gemini-vs-Claude A/B                 (124 tests)
