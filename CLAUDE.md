@@ -2,15 +2,19 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** **M3 COMPLETE** — FastAPI service layer (commit `36a429f`). The mapping graph that previously ran only via `worker run` is now reachable as an HTTP service: `GET /health [+?deep]`, `POST /map`, `GET /eval`, `GET /eval/{run_id}`. Sync handler in `asyncio.to_thread` under a global `asyncio.Lock` (DuckDB conns and `GeminiProvider` token totals aren't thread-safe), 600s hard timeout, single target table per request, inline `SchemaProfile` Pydantic in the request body, glob-based eval lookup over `benchmarks/*/out/eval_report*.json` with a 60s TTL cache, `CORSMiddleware` allowing `http://localhost:3000` so M4 plugs in. ADR `docs/adr/0005-fastapi-service-layer.md` captures the sync-in-threadpool / single-target / inline-profile / glob-lookup decisions. **137 tests passing** (130 packages + 7 new in `apps/api/tests/`, all offline via `evals._fakes` SmokeFakeLLM + ConstantEmbedder). Live smoke against `uvicorn api.main:app` confirmed real-Gemini /health, eval-by-run-id, 404 path, and CORS preflight from `Origin: http://localhost:3000`.
+**Current milestone:** **M4 COMPLETE** (umbrella tag `m4-complete` on commit `998b52f`). The full M4 series shipped: M4.1 → M4.2 → M4.3. Browser-facing UI for the M3 service at `apps/web/`: Next.js 16 + React 19 + Tailwind v4 + TypeScript, `DESIGN.md`-driven Composio aesthetic (Void Black canvas, Composio Cobalt + Electric Cyan accents, Geist Sans + JetBrains Mono via `next/font/google`, brutalist 4px-offset shadow utility, 0.87 heading line-heights). 6 user routes: `/` (landing with hero gradient + nav cards), `/eval` (server-component table over `GET /eval`), `/eval/[run_id]` (rates matrix card + per-spec ScoreEntry table with disputed-row dimming), `/map` (client-component form with file upload + AbortController-cancel + cyan elapsed-timer for 10s–5min POST `/map` requests), `/health` (full HealthResponse surface + opt-in deep probe button), `not-found.tsx`. HealthPill in the Brand header polls `GET /health` every 30s. **CORS pre-wired**, no auth, no JS-side tests yet (M4.x). Verification: `npm run lint` clean, `npm run build` green, Python regression stays at **137 passed** (130 packages + 7 in `apps/api/tests/`).
 
-**Prior milestone:** **M2 COMPLETE** (umbrella tag `m2-complete` on commit `3ff37a7`). The full M2 series shipped: M1 → M2.1 → M2.1.x → M2.2 → M2.3 → M2.3.x → M2.4 → M2.5 → M2.6 → M2.7. Real-LLM accuracy on AdventureWorks (Gemini 2.5 Flash, paid tier-1): **78.9% inclusive / 96.7% exclusive** exact match (M0 baseline 65.8% / 83.3%; +13.1pp inclusive across M2). PATTERN 84.2% / 100.0%, SQL_SEMANTIC 89.5% / 100.0% (every non-disputed spec gets the right pattern + tokens). RENAME 29/30 EXACT, DERIVED 1/8 EXACT (last 7 = disputed XML/aggregation/cross-table cases out of M2 scope). The M2.2 multi-source JOIN infrastructure (validator FK-aware FROM, dbt_emit `intermediate/int_*.sql` models, generator multi-source mode) is built and tested but unexercised by current goldens. **9/10 dbt models build clean** (HumanResources.Employee ODBC type -151 still the known fail). Total M2 LLM spend across all sub-milestones: ~5 cents at Flash tier-1.
+**Prior milestone:** **M3 COMPLETE** — FastAPI service layer (commit `36a429f`). The mapping graph is reachable as an HTTP service: `GET /health [+?deep]`, `POST /map`, `GET /eval`, `GET /eval/{run_id}`. Sync handler in `asyncio.to_thread` under a global `asyncio.Lock`, 600s hard timeout, single target table per request, inline `SchemaProfile` Pydantic in the request body, glob-based eval lookup with a 60s TTL cache. ADR `docs/adr/0005-fastapi-service-layer.md` captures the decisions.
+
+**Prior milestone:** **M2 COMPLETE** (umbrella tag `m2-complete` on commit `3ff37a7`). M1 → M2.1 → M2.1.x → M2.2 → M2.3 → M2.3.x → M2.4 → M2.5 → M2.6 → M2.7. Real-LLM accuracy on AdventureWorks (Gemini 2.5 Flash): **78.9% inclusive / 96.7% exclusive** exact match. RENAME 29/30 EXACT, DERIVED 1/8 EXACT. **9/10 dbt models build clean**. Total M2 LLM spend: ~5 cents at Flash tier-1.
 
 **Baselines preserved on disk:** `benchmarks/adventureworks/out/eval_report.m1-baseline.json`, `eval_report.m2-1-baseline.json`, `eval_report.m2-2-final.json`, `eval_report.m2-3-final.json`, `eval_report.m2-3-x-final.json`, `eval_report.m2-complete.json` (all gitignored but kept). Diff against `eval_report.json` to measure any future change.
 
-**M4 starts here:** Next.js 14 + shadcn/ui frontend that calls the M3 service. Per the original stack plan, M4 is the browser-facing UI; the API contract is already locked (`MapRequest`/`MapResponse`/`EvalSummary` in `packages/schemas/api.py`, CORS allow-origin set to `http://localhost:3000`). **`DESIGN.md` (root of repo) is the canonical UI inspiration** — a Composio-derived design system (dark theme, electric-cyan + Composio-cobalt accents, abcDiatype + JetBrains Mono, ultra-tight heading line-heights, brutalist offset shadows, bioluminescent glows). Tell Claude to read `DESIGN.md` before writing any UI; the goal is "developer terminal aesthetic" that matches the DataOps + dbt audience, not generic SaaS-pastel. Anything still on the eval side (JOIN-aware retrieval for TaxAmt/Freight EXACT, real Claude A/B run via the M2.5 ClaudeProvider) is a parallel/optional workstream — not blocking M4. Write a new plan file for M4.
+**What's next:** the portfolio shape is now complete end-to-end (CLI → API → UI). The remaining workstreams are parallel/optional and listed at impact-to-effort below. Top of mind: **M3.1 = SSE streaming progress for `POST /map`** (would replace the spinner-only UX with per-node graph events) and **M5 = deploy** (publish the demo somewhere reachable, e.g. fly.io for the API + Vercel for the web). Eval-side lifts (JOIN-aware retrieval for TaxAmt/Freight, real Claude A/B run) remain genuinely parallel.
 
-**Canonical M3 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\lets-start-working-on-refactored-prism.md` — describes the FastAPI scope: 4 endpoints, sync-in-threadpool, glob-based eval lookup, CORS for the M4 dev origin. Useful context but M3 is shipped.
+**Canonical M4 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\lets-start-working-on-refactored-prism.md` — describes the M4.1 scaffold + DESIGN.md token wiring + sub-milestone breakdown. The plan was scoped to M4.1 only; M4.2 and M4.3 were executed without separate plan files. Useful context but M4 is shipped.
+
+**Canonical M3 plan (overwritten — see M4 plan).** The M3 plan was overwritten when M4 began. M3 history lives in commit messages and `docs/adr/0005-fastapi-service-layer.md`.
 
 **Canonical evolved plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\continue-with-m2-1-from-lexical-barto.md` — describes the full M2 evolution from M2.1 through the final 5-sub-milestone finish.
 
@@ -247,7 +251,13 @@ npm --prefix apps/web run build             # production build (also type-checks
 ## Current status (commit log, newest first)
 
 ```
-e262e7d  Refresh CLAUDE.md for M3-complete state                          (137 tests)
+<pending> Refresh CLAUDE.md for M4-complete state                          (137 tests)
+998b52f  M4.3: HealthPill + /health page + responsive polish (M4 umbrella) (137 tests)
+b76cbc1  M4.2: /map page with profile upload + long-request UX             (137 tests)
+50fec54  M4.1: scaffold apps/web (Next.js 16 + Tailwind v4) + /eval pages  (137 tests)
+9c30e9c  Add DESIGN.md and wire it into CLAUDE.md as the M4 UI reference   (137 tests)
+7dc018f  Fill in M3-complete CLAUDE.md refresh hash                        (137 tests)
+e262e7d  Refresh CLAUDE.md for M3-complete state                           (137 tests)
 36a429f  M3: FastAPI service layer wrapping the M2 mapping graph           (137 tests)
 b99b19f  Fill in M2-complete CLAUDE.md refresh hash                        (130 tests)
 7557795  Refresh CLAUDE.md for M2-complete state                           (130 tests)
@@ -297,36 +307,43 @@ df0a8ae  M0 Day 4 scaffolding: Gemini + Langfuse ready for API keys
 2df890d  M0 Day 1: scaffold
 ```
 
-Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1-complete` on `4346c93`, `m2.2-complete` on `fc83c60`, `m2.3-complete` on `ac5feca`, `m2.3.x-complete` on `479d44b`, `m2.4-complete` on `22ebf91`, `m2.5-complete` on `94546da`, `m2.6-complete` on `a19810f`, `m2.7-complete` on `3ff37a7`, **`m2-complete`** on `3ff37a7` (umbrella, latest).
+Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1..7-complete` (per-sub-milestone) and `m2-complete` on `3ff37a7`, `m3-complete` on `36a429f`, `m4.1-complete` on `50fec54`, `m4.2-complete` on `b76cbc1`, `m4.3-complete` on `998b52f`, **`m4-complete`** on `998b52f` (umbrella, latest).
 Public repo: https://github.com/mohammad-alshaer/integration-agent — first push landed mid-M1 session.
 
 ---
 
-## What's left — M4 starts here
+## What's left — workstreams after M4
 
-M3 is shipped (commit `36a429f`). M4 is the Next.js + shadcn frontend per the original stack plan. Ordered by impact-to-effort:
+M4 is shipped (umbrella `m4-complete` on `998b52f`). The portfolio shape is end-to-end. Remaining work is **parallel/optional** — pick by what helps the Dar CIO demo or the resume narrative most. Ordered by impact-to-effort:
 
-### M4 — Next.js 14 + shadcn UI (THE NEXT MILESTONE)
+### M5 — deploy (THE LIKELY NEXT MILESTONE)
 
-Browser-facing app calling the M3 API. **Read `DESIGN.md` first** — it defines the visual vocabulary (Void Black `#0f0f0f` canvas, Composio Cobalt `#0007cd` + Electric Cyan `#00ffff` accents, dual-font abcDiatype + JetBrains Mono, ultra-tight 0.87 heading line-heights, brutalist 4px-offset shadows, bioluminescent radial glows, ~12% white-opacity borders for containment). The aim is a developer-terminal aesthetic that signals "tool for engineers" rather than generic SaaS — fits the DataOps + dbt audience and the Dar CIO meeting framing.
+Get the demo onto a real URL so it's not just a localhost screenshot. Two pieces:
+- **API**: deploy `apps/api` somewhere with persistent storage for `.duckdb/` and `.cache/`. Free-ish options: fly.io (free tier covers the volume) or Render (free tier). Both support a `Dockerfile` build with the existing pip install workflow. Need to bake `tmp/profiles/aw2022_filtered.json` + `tmp/profiles/awdw2022.json` and `benchmarks/adventureworks/samples/` into the image so demo runs work out of the box.
+- **Web**: deploy `apps/web` to Vercel (the natural Next.js host, free tier). Set `NEXT_PUBLIC_API_BASE_URL` to the deployed API origin. Update `INTEGRATION_AGENT_API_CORS_ORIGIN` on the API to allow the Vercel preview URL.
 
-Concrete starting set:
-- **Page 1 — `/map`**: paste/upload source + target SchemaProfile JSON, pick a target table, hit `POST /map`. Render the returned `MappingSpec[]` with pattern badges (RENAME / CONCAT / DERIVED in cyan/cobalt), per-spec SQL block in JetBrains Mono inside a dark card with whisper-white border, classifications + validation summaries, total `elapsed_sec`. Long-request UX (10s–5min) is the load-bearing piece — start with a cyan-pulsing spinner + the 600s API timeout; streaming + job IDs are M4.x.
-- **Page 2 — `/eval`**: list `EvalSummary[]` from `GET /eval` as a dense table. Click through to `GET /eval/{run_id}` for full `EvalReport` — render the rates matrix (inclusive/exclusive × exact/pattern/sql_exec/sql_semantic) and the per-spec `ScoreEntry` table with disputed-row highlighting (dim text + "disputed" tag in 12px overline).
-- **Page 3 — `/health`**: just `GET /health` + the `?deep=true` button as a status pill, probably in a footer or top-bar slot.
+Cost: ~$0/mo if Mohammad sticks to free tiers and the Gemini cache stays warm. First-run cold-cache eval on a fresh deploy could cost $0.30 if the eval runs.
 
-Stack: Next.js 14 (app router), shadcn/ui, TypeScript, fetch (no need for SWR in M4), Tailwind configured to the `DESIGN.md` color palette + font stack. Auth: still out of scope. **Run side-by-side on `localhost:3000` against the API on `localhost:8000`** — CORS is already wired. Type-share: generate TS types from the FastAPI OpenAPI schema (`/openapi.json`) so `MapRequest` / `MappingSpec` / `EvalReport` stay aligned without hand-coding. shadcn primitives (Form, Card, Table, Tabs, Badge, Button) get re-themed via the Tailwind tokens in `DESIGN.md` rather than using the default shadcn palette.
+### M3.1 — streaming progress for POST /map (small but high-impact)
 
-### Optional parallel work (not blocking M4)
+Replace the M4.2 spinner-only UX with Server-Sent Events emitting per-node graph events ("semantic_matcher: 12 / 91", "validator: 3 retries", etc.). Web side renders an event log under the elapsed timer. ~150 LoC API, ~50 LoC web. Right call once any user actually runs a cold-cache /map and the 5min spinner UX gets noticed.
 
-- **JOIN-aware second-pass retrieval** to unlock TaxAmt + Freight EXACT (still ~30-50 LoC; documented in M2.3.x post-mortem). Would lift DERIVED 1/8 → 3/8 and headline 78.9% → ~83-85% inclusive.
-- **Real Claude A/B run** using the M2.5 ClaudeProvider — `python -m evals --provider claude --model claude-haiku-4-5` (~$0.30) — generates a side-by-side eval report for portfolio framing. Will surface in `/eval` automatically once written.
+### Optional eval-side lifts (genuinely parallel)
+
+- **JOIN-aware second-pass retrieval** to unlock TaxAmt + Freight EXACT (~30-50 LoC; documented in M2.3.x post-mortem). Would lift DERIVED 1/8 → 3/8 and headline 78.9% → ~83-85% inclusive. New eval reports surface in `/eval` automatically.
+- **Real Claude A/B run** using the M2.5 ClaudeProvider — `python -m evals --provider claude --model claude-haiku-4-5` (~$0.30) — generates a side-by-side report. Side-by-side comparison in `/eval` is a nice portfolio screenshot.
 - **CustomerKey domain-alignment regression** — matcher overgeneralizes Sales.Customer vs Person.BusinessEntity. ~15 LoC fix.
-- **M3.1: streaming progress for `POST /map`** — Server-Sent Events emitting per-node graph events. Right move once M4 is in users' hands and the spinner-only UX hurts. Document as M3.1.
 
-### M3 retrospective — what shipped, what didn't
+### M4.x — frontend polish (only if the demo demands it)
 
-Shipped: 4 endpoints, 7 offline tests, ADR 0005, CORS, opt-in deep health, glob-based eval lookup. Did NOT ship (deferred): job IDs, `POST /profile` (still CLI-only, 5–30 min SQL Server connection is wrong shape for HTTP), `POST /eval` to trigger eval runs (still CLI-only).
+- **SQL syntax highlighting** in MappingSpecCard via `shiki` or `highlight.js` (~80 LoC + dep). Currently plain JetBrains Mono.
+- **Auto-generated TS types** from `/openapi.json` via `openapi-typescript` (~10 LoC build hook). Replaces the hand-mirrored types in `apps/web/src/lib/api.ts`.
+- **Save/export `MapResponse`** as JSON or markdown from the `/map` result panel.
+- **JS-side tests** (Vitest + Playwright) when regressions actually appear. None today.
+
+### M4 retrospective — what shipped, what didn't
+
+Shipped: 6 routes, DESIGN.md-driven theme, profile-upload form with abort-able 10s–5min UX, eval browser with rates matrix, polled HealthPill + opt-in deep probe page, three sub-milestone commits + the umbrella `m4-complete` tag. Did NOT ship: shadcn primitives (hand-rolled small components instead — paid off), JS-side tests (deferred to M4.x), `/openapi.json` type auto-gen (deferred), streaming progress (M3.1), demo-profile auto-loader (M4.x).
 
 ---
 
@@ -380,14 +397,23 @@ Shipped: 4 endpoints, 7 offline tests, ADR 0005, CORS, opt-in deep health, glob-
 
 26. **Next.js dev defaults to port 3000; CORS in the API only allows `http://localhost:3000`.** Don't change either independently. If the dev server can't bind 3000 (already taken), set `INTEGRATION_AGENT_API_CORS_ORIGIN=http://localhost:<other>` on the API process to keep them aligned.
 
+27. **shadcn was deliberately skipped through M4.** All `apps/web/src/components/` are hand-rolled in pure Tailwind utility classes (Brand, Container, Card, PageHeader, DataTable, Badge, Spinner, ProfileUploader, Select, NumberField+Toggle, MappingSpecCard, HealthPill). Re-theming shadcn primitives to DESIGN.md was estimated heavier than hand-rolling at the M4 component count. Add shadcn in M4.x only when richer interactions (Dialog, Toast, Command palette, Accordion) genuinely earn their keep.
+
+28. **React 19 / Next 16 lint rule: `react-hooks/set-state-in-effect`.** The rule rejects synchronous `setState` calls inside `useEffect` bodies — they cause cascading renders. Pattern fixes: (a) move the `setState` into the event handler that triggers the effect (e.g. `setElapsed(0)` before `setSubmitting(true)` in onSubmit, not at the top of the elapsed-tick effect); (b) for "reset state when prop changes," do it in the wrapper handler that sets the prop (e.g. `handleTargetLoad = (p) => { setTarget(p); setTargetTable(""); }` instead of `useEffect(() => setTargetTable(""), [target])`). Encountered this twice in `apps/web/src/app/map/page.tsx`.
+
+29. **HealthPill polls `GET /health` every 30s from the browser.** Cheap (no LLM call). The pill shows the LLM provider label (e.g. "gemini") on success, "offline" or "api 503" on failure. Lives in the Brand header on every page. The dedicated `/health` page has the opt-in deep probe — that one DOES burn one Gemini cache slot per click; default off, explicit user action only.
+
+30. **`apps/web/AGENTS.md` is generated by create-next-app and warns "this is NOT the Next.js you know."** Take it seriously — the bundled docs at `apps/web/node_modules/next/dist/docs/` are the authoritative breaking-change reference. Most likely-to-bite changes already encoded in gotchas #23 (params Promise, Tailwind v4 CSS-first) + #28 (set-state-in-effect).
+
 ---
 
 ## When in doubt
 
-1. **For M4 (Next.js + shadcn) work:** **read `DESIGN.md` first** — it's the design-system contract for the UI (palette, typography, atmosphere). Then read the "What's left — M4 starts here" section above. Generate TS types from the FastAPI OpenAPI schema (`localhost:8000/openapi.json`) so `MapRequest` / `MappingSpec` / `EvalReport` stay aligned. Run the API and the frontend side-by-side; CORS is already wired for `localhost:3000`.
-2. **For M3 (API) edits:** the canonical references are `apps/api/src/api/main.py` (lifespan + CORS), `apps/api/src/api/routers/{health,map,eval}.py`, and `docs/adr/0005-fastapi-service-layer.md`. The 7 offline tests in `apps/api/tests/test_routes.py` are the contract guard.
-3. **For project history:** the M1 plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md`, the M2-evolution plan at `~/.claude/plans/continue-with-m2-1-from-lexical-barto.md` (covers M2.1 → M2.7), and the M3 plan at `~/.claude/plans/lets-start-working-on-refactored-prism.md` are reference-only.
-4. **Memory:** check `MEMORY.md` for project/feedback notes about Mohammad's preferences and corporate environment specifics.
-5. **For DataOps / Claude-specific concept questions**, explain foundational concepts (eval, RAG, dbt, embeddings, LangGraph state machines, etc.) with a concrete example tied to the current task. Mohammad is a new-grad — don't just name-drop.
-6. **Cost discipline:** Mohammad prefers free/free-tier solutions; surface cost estimates upfront on any paid-service decision. Gemini Flash paid tier-1 is already configured (~$0.30/full eval; cache makes re-runs nearly free).
-7. **Before any GitHub push:** verify no secrets in the diff. The repo is **public**; anything pushed is permanently visible.
+1. **For M5 (deploy) work:** read the "What's left" section above. The API needs a Dockerfile + persistent volume for `.duckdb/` and `.cache/`; the web app deploys to Vercel with `NEXT_PUBLIC_API_BASE_URL` set to the API URL. Update `INTEGRATION_AGENT_API_CORS_ORIGIN` to the deployed Vercel origin so CORS still passes. Test profiles + Parquet samples need to be baked into the API image.
+2. **For M4 / web edits:** **read `DESIGN.md` first** — it's the design-system contract. The hand-mirrored TS types in `apps/web/src/lib/api.ts` are the only place to update if the Python contracts in `packages/schemas/` or `packages/evals/` change. Components are hand-rolled in pure Tailwind; shadcn was deliberately skipped (gotcha #27). React 19's `react-hooks/set-state-in-effect` rule blocks synchronous `setState` calls inside `useEffect` bodies (gotcha #28).
+3. **For M3 (API) edits:** the canonical references are `apps/api/src/api/main.py` (lifespan + CORS), `apps/api/src/api/routers/{health,map,eval}.py`, and `docs/adr/0005-fastapi-service-layer.md`. The 7 offline tests in `apps/api/tests/test_routes.py` are the contract guard.
+4. **For project history:** the M1 plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md`, the M2-evolution plan at `~/.claude/plans/continue-with-m2-1-from-lexical-barto.md` (covers M2.1 → M2.7), and the M4 plan at `~/.claude/plans/lets-start-working-on-refactored-prism.md` (covers M4.1 explicitly; M4.2 + M4.3 done without separate plan files) are reference-only. M3 history lives in commit messages + `docs/adr/0005-fastapi-service-layer.md`.
+5. **Memory:** check `MEMORY.md` for project/feedback notes about Mohammad's preferences and corporate environment specifics.
+6. **For DataOps / Claude-specific concept questions**, explain foundational concepts (eval, RAG, dbt, embeddings, LangGraph state machines, React Server Components, etc.) with a concrete example tied to the current task. Mohammad is a new-grad — don't just name-drop.
+7. **Cost discipline:** Mohammad prefers free/free-tier solutions; surface cost estimates upfront on any paid-service decision. Gemini Flash paid tier-1 is already configured (~$0.30/full eval; cache makes re-runs nearly free). Frontend is $0 (Vercel free tier).
+8. **Before any GitHub push:** verify no secrets in the diff. The repo is **public**; anything pushed is permanently visible.
