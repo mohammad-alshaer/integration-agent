@@ -2,13 +2,13 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** **M2.3 complete** (tag `m2.3-complete`). Real-LLM accuracy on AdventureWorks (Gemini 2.5 Flash, paid tier-1): **73.7% inclusive / 90.0% exclusive** exact match (unchanged headline EXACT vs M2.2 — net 0 from +1 ExtendedAmount EXACT and -1 CustomerKey regression). The M2.3 win is at the partial-match levels: **PATTERN 84.2% inclusive / 100.0% exclusive** (was 76.3 / 96.7), **SQL_SEMANTIC 89.5% inclusive / 100.0% exclusive** (was 78.9 / 96.7). Every non-disputed spec now produces a spec with the correct pattern + the right source-column tokens — the classifier no longer falls back to `unsupported_in_m1` when canonical sources are partially missing. RENAME 27/30 EXACT (CustomerKey EXACT → PATTERN; matcher's domain-alignment instruction overgeneralizes Sales.Customer vs Person.BusinessEntity); DERIVED 1/8 EXACT (ExtendedAmount recovered from Purchasing-LineTotal mistake). Multi-source JOIN infra (M2.2) still dormant — TaxAmt + Freight reach PATTERN (DERIVED with 1-of-3 sources) but not EXACT; full unlock needs FK-aware retrieval (M2.X). **9/10 dbt models build clean** (HumanResources.Employee ODBC type -151 still the known fail). 33+ commits on `main`, 114 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Total M2.3 LLM spend: ~1 cent at Flash tier-1 (2 eval re-runs).
+**Current milestone:** **M2 COMPLETE** (umbrella tag `m2-complete` on the same commit as `m2.7-complete`). The full M2 series shipped: M1 → M2.1 → M2.1.x → M2.2 → M2.3 → M2.3.x → M2.4 → M2.5 → M2.6 → M2.7. Real-LLM accuracy on AdventureWorks (Gemini 2.5 Flash, paid tier-1): **78.9% inclusive / 96.7% exclusive** exact match (M0 baseline 65.8% / 83.3%; +13.1pp inclusive across M2). PATTERN 84.2% / 100.0%, SQL_SEMANTIC 89.5% / 100.0% (every non-disputed spec gets the right pattern + tokens). RENAME 29/30 EXACT, DERIVED 1/8 EXACT (last 7 = disputed XML/aggregation/cross-table cases out of M2 scope). The M2.2 multi-source JOIN infrastructure (validator FK-aware FROM, dbt_emit `intermediate/int_*.sql` models, generator multi-source mode) is built and tested but unexercised by current goldens — TaxAmt + Freight reach PATTERN with partial sources but not full multi-source DERIVED. **9/10 dbt models build clean** (HumanResources.Employee ODBC type -151 still the known fail). New in M2.4-M2.7: SQL_EXEC_EQUIVALENT match level (4th level via DuckDB-executed comparison), `ClaudeProvider` for Gemini-vs-Claude A/B (claude-haiku-4-5 / sonnet-4-6 / opus-4-7), commutative-arg sorting in normalize_sql, pipeline_dollars_total telemetry. 40+ commits on `main`, 130 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Total M2 LLM spend across all sub-milestones: ~5 cents at Flash tier-1.
 
-**Baselines preserved on disk:** `benchmarks/adventureworks/out/eval_report.m1-baseline.json`, `eval_report.m2-1-baseline.json`, `eval_report.m2-2-final.json`, `eval_report.m2-3-final.json` (all gitignored but kept). Diff against `eval_report.json` to measure any future change.
+**Baselines preserved on disk:** `benchmarks/adventureworks/out/eval_report.m1-baseline.json`, `eval_report.m2-1-baseline.json`, `eval_report.m2-2-final.json`, `eval_report.m2-3-final.json`, `eval_report.m2-3-x-final.json`, `eval_report.m2-complete.json` (all gitignored but kept). Diff against `eval_report.json` to measure any future change.
 
-**M2.X starts here:** Read the "What's left — M2 entry-points" section at the bottom. The most surprising M2.3 finding: **classifier softening + matcher domain alignment + k=15 lifted PATTERN/SQL_SEMANTIC to 100% exclusive**, but the last 2-3 EXACTs (TaxAmt, Freight, possibly DiscountAmount) need FK-aware retrieval to surface Detail.LineTotal in the candidate set. M2.2's JOIN infrastructure remains ready to be exercised once that retrieval gap closes.
+**M3 starts here:** FastAPI service layer. M2 wrapped at 78.9% inclusive / 96.7% exclusive EXACT — accuracy work is paused. Per the original stack plan: **M3 = FastAPI (expose the agent as a service); M4 = Next.js + shadcn UI**. Portfolio framing for the Dar CIO meeting shifts from "how accurate is the classifier" to "the agent runs as a service that humans + downstream systems can call." Anything still on the eval side (e.g. JOIN-aware retrieval to unlock TaxAmt/Freight EXACT, ClaudeProvider real A/B run) becomes a parallel/optional workstream — not blocking M3.
 
-**Canonical evolved plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\continue-with-m2-1-from-lexical-barto.md` — describes the M2.1+M2.1.x+M2.2 evolution; M2.3 was executed without re-writing the plan file (smaller scope). Write a new plan file for the next milestone.
+**Canonical evolved plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\continue-with-m2-1-from-lexical-barto.md` — describes the full M2 evolution from M2.1 through the final 5-sub-milestone finish. Write a new plan file for M3.
 
 **Canonical M1 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\i-want-to-do-jiggly-yeti.md` — describes the M1 scope; useful context but M1 is shipped. Write a new plan file for M2 work; don't edit the M1 one.
 
@@ -218,6 +218,13 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
+<pending> Refresh CLAUDE.md for M2-complete state                           (130 tests)
+3ff37a7  M2.7: pipeline_dollars_total + ruff cleanup                       (130 tests)
+a19810f  M2.6: Commutative-arg sorting in normalize_sql                    (128 tests)
+94546da  M2.5: Add ClaudeProvider for Gemini-vs-Claude A/B                 (124 tests)
+22ebf91  M2.4: Add SQL_EXEC_EQUIVALENT match level via DuckDB-executed SQL (120 tests)
+479d44b  M2.3.x: JOIN-aware FK retrieval + sharper domain alignment 73.7%->78.9% (117 tests)
+962d662  Fill in M2.3 CLAUDE.md refresh hash                                (114 tests)
 07d3fd0  Refresh CLAUDE.md for M2.3-complete state                         (114 tests)
 ac5feca  M2.3: Lift PATTERN/SQL_SEMANTIC to 100% exclusive via matcher domain alignment + classifier softening + k=15 (114 tests)
 a856a09  Fill in M2.2 CLAUDE.md refresh hash                              (114 tests)
@@ -258,31 +265,29 @@ df0a8ae  M0 Day 4 scaffolding: Gemini + Langfuse ready for API keys
 2df890d  M0 Day 1: scaffold
 ```
 
-Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1-complete` on `4346c93`, `m2.2-complete` on `fc83c60`, `m2.3-complete` on `ac5feca` (latest).
+Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1-complete` on `4346c93`, `m2.2-complete` on `fc83c60`, `m2.3-complete` on `ac5feca`, `m2.3.x-complete` on `479d44b`, `m2.4-complete` on `22ebf91`, `m2.5-complete` on `94546da`, `m2.6-complete` on `a19810f`, `m2.7-complete` on `3ff37a7`, **`m2-complete`** on `3ff37a7` (umbrella, latest).
 Public repo: https://github.com/mohammad-alshaer/integration-agent — first push landed mid-M1 session.
 
 ---
 
-## What's left — M2 entry-points
+## What's left — M3 starts here
 
-M1 + M2.1 + M2.1.x + M2.2 + M2.3 are shipped + tagged + pushed. M2.X starts here. Ordered by impact-to-effort:
+M2 is shipped + tagged + pushed (umbrella `m2-complete`). M3 is FastAPI per the original stack plan. Ordered by impact-to-effort:
 
-### M2.X.a — JOIN-aware second-pass retrieval (the last EXACT unlock)
+### M3 — FastAPI service layer (THE NEXT MILESTONE)
 
-M2.3 lifted partial-match metrics to 100% exclusive but didn't move EXACT. The remaining 2-3 EXACTs (TaxAmt, Freight, possibly DiscountAmount) are blocked at retrieval — Detail.LineTotal isn't in their classifier candidates even at k=15, because the embedder ranks "money/amount"-type columns from semantically-aligned tables higher than columns with structurally-similar names from FK-linked tables.
+Expose the agent as a service. Endpoints to consider:
+- `POST /map` — submit (source_profile, target_profile, target_table) → returns MappingSpec list (run the graph synchronously for small targets, or async with a job ID)
+- `GET /eval/{run_id}` — fetch a stored EvalReport
+- `GET /health` — basic liveness
 
-**Proposed approach (~30-50 LoC):** After the first matcher pass returns top-K, scan the source profile for FK-linked tables of the top-K's source tables. For each FK-linked table, surface its top-3 columns by name similarity to the target — append to the candidate set. The classifier then sees Header.X + Header.SubTotal + Detail.LineTotal together and the M2.3 TaxAmt few-shot fires correctly. M2.2's JOIN infrastructure (validator FK-aware FROM clause + dbt_emit `intermediate/` models + DerivedGenerator multi-source mode) is already in place — this just feeds it real specs.
+Stack: FastAPI + uvicorn. Auth: out of scope for M3 (local-only demo). Persistence: write specs/reports to DuckDB or Parquet under `apps/api/data/`. Frontend: M4 (Next.js + shadcn).
 
-**Expected lift:** TaxAmt + Freight + maybe DiscountAmount → EXACT. DERIVED 1/8 → 3-4/8. Headline 73.7% → ~78-80% inclusive.
+### Optional M2.X parallel work (not blocking M3)
 
-### M2.X.b — CustomerKey domain-alignment regression
-
-M2.3's matcher domain-alignment instruction overgeneralizes: model now picks `Person.BusinessEntity.BusinessEntityID` over `Sales.Customer.CustomerID` for `dbo.DimCustomer.CustomerKey`. Both are valid (BusinessEntity is the parent of Customer via FK), but the golden expects the more specific Customer table.
-
-**Quick fix candidates (~15 LoC each):**
-- Sharpen the matcher's domain-alignment instruction to be specifically about WRONG-domain (Purchasing vs Sales) rather than RELATED-but-different-domain (Customer vs BusinessEntity). E.g., "prefer the most specific source — Customer beats BusinessEntity if both contain CustomerID".
-- Add a CustomerKey-style few-shot to the classifier showing the disambiguation.
-- Re-author the golden with an `accepted_alternative` for `[Person.BusinessEntity.BusinessEntityID]` — both are arguably correct in production.
+- **JOIN-aware second-pass retrieval** to unlock TaxAmt + Freight EXACT (still ~30-50 LoC; documented in M2.3.x post-mortem). Would lift DERIVED 1/8 → 3/8 and headline 78.9% → ~83-85% inclusive.
+- **Real Claude A/B run** using the M2.5 ClaudeProvider — `python -m evals --provider claude --model claude-haiku-4-5` (~$0.30) — generates a side-by-side eval report for portfolio framing.
+- **CustomerKey domain-alignment regression** — matcher overgeneralizes Sales.Customer vs Person.BusinessEntity. ~15 LoC fix.
 
 ### M2.4 — DuckDB-executed SQL equivalence (4th match level)
 
@@ -326,12 +331,20 @@ Telemetry now reports tokens; per-provider price tables would convert that to do
 
 13. **k=15 is now the matcher default** (was 10 through M2.2). Bumped in semantic_matcher.match_target_columns + graph.compile_graph + evals.RunnerConfig + evals CLI option. Matcher prompt grows ~50% in candidate-list tokens; cache-hit re-runs are unaffected; per-call cost increase is sub-cent. If you bump it again (e.g. to 20), update all 4 places.
 
+14. **M2.3.x JOIN-aware FK retrieval is on by default.** When source_profile is supplied to match_target_columns (which graph.semantic_matcher_node now does), after the HNSW top-K we ALSO append type-compatible columns from FK-linked tables (max 3 per table, max 5 total extension). Distance is set to 0.999 for these — sorted last. The matcher's system prompt documents this so the LLM rerank knows the high-distance candidates are FK-extended and worth examining.
+
+15. **M2.4 SQL_EXEC_EQUIVALENT match level requires sandbox.** scorer.classify_match accepts optional sandbox + source_profile kwargs; the eval runner now passes both. For non-EXACT specs whose actual SQL passed validation, the scorer builds canonical SQL from expected (RENAME → SELECT col, CONCAT → SELECT concat_ws), executes both against the sandbox, and compares result rows. DERIVED has no canonical synthesis (golden doesn't store the canonical expression) — falls through to SQL_SEMANTIC.
+
+16. **M2.5 ClaudeProvider is implemented but no live A/B has run yet.** Run with `python -m evals --provider claude --model claude-haiku-4-5` — needs ANTHROPIC_API_KEY in .env. Estimated cost ~$0.30 cold-cache on Haiku 4.5, ~$1.50 on Sonnet 4.6. The structural unit tests (test_llm.py) mock the SDK so they're free.
+
+17. **M2.7 pipeline_dollars_total** uses pricing from `packages/evals/src/evals/pricing.py`. If a provider returns 0 dollars, check the PRICING dict for that (provider, model) pair — unknown pairs default to (0.0, 0.0). Update PRICING if a provider changes their published pricing.
+
 ---
 
 ## When in doubt
 
-1. **For M2.2.x or M2.3+ work:** start with the "What's left — M2 entry-points" section above. Compare any change against the M2.2 numbers in `benchmarks/adventureworks/out/eval_report.json` (the live report) AND `eval_report.m2-2-final.json` (the M2.2 baseline) AND `eval_report.m1-baseline.json` (the M1 floor). All are gitignored but kept on disk.
-2. **For project history:** the M1 plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md` and the M2.1+M2.1.x+M2.2 evolved plan at `~/.claude/plans/continue-with-m2-1-from-lexical-barto.md` are reference-only.
+1. **For M3 (FastAPI) work:** read the "What's left — M3 starts here" section above. Compare the eval baseline going forward against `eval_report.m2-complete.json` (78.9% / 96.7%) — M3 isn't expected to touch eval metrics, but a regression check is cheap.
+2. **For project history:** the M1 plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md` and the M2-evolution plan at `~/.claude/plans/continue-with-m2-1-from-lexical-barto.md` (final state covers M2.1 → M2.7) are reference-only.
 3. **Memory:** check `MEMORY.md` for project/feedback notes about Mohammad's preferences and corporate environment specifics.
 4. **For DataOps / Claude-specific concept questions**, explain foundational concepts (eval, RAG, dbt, embeddings, LangGraph state machines, etc.) with a concrete example tied to the current task. Mohammad is a new-grad — don't just name-drop.
 5. **Cost discipline:** Mohammad prefers free/free-tier solutions; surface cost estimates upfront on any paid-service decision. Gemini Flash paid tier-1 is already configured (~$0.30/full eval; cache makes re-runs nearly free).
