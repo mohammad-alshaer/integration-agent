@@ -23,6 +23,7 @@ from evals.models import (
     MatchLevel,
     ScoreEntry,
 )
+from evals.pricing import tokens_to_dollars
 from schemas import MappingSpec, Pattern, SchemaProfile
 
 _SQL_KEYWORDS: frozenset[str] = frozenset(
@@ -150,9 +151,12 @@ def classify_match(
     # so it can upgrade a "same pattern, different source" case to a stronger semantic match.
     # Only fires when sandbox is supplied AND validation passed AND the expected pattern has
     # a canonical-SQL synthesis (RENAME or CONCAT — DERIVED has no canonical form in the golden).
-    if sandbox is not None and actual.validation_pass_rate == 1.0:
-        if _exec_results_equal(expected, actual, sandbox, source_profile):
-            return MatchLevel.SQL_EXEC_EQUIVALENT
+    if (
+        sandbox is not None
+        and actual.validation_pass_rate == 1.0
+        and _exec_results_equal(expected, actual, sandbox, source_profile)
+    ):
+        return MatchLevel.SQL_EXEC_EQUIVALENT
     if expected.expected_pattern == actual.pattern:
         return MatchLevel.PATTERN
     norm = normalize_sql(actual.sql)
@@ -341,6 +345,9 @@ def score(
         elif e.level == MatchLevel.MISSING:
             bucket["missing"] += 1
 
+    pipeline_dollars_in, pipeline_dollars_out, pipeline_dollars_total = tokens_to_dollars(
+        provider, model, pipeline_total_tokens_in, pipeline_total_tokens_out
+    )
     confidences = [s.llm_confidence for s in actual_specs]
     mean_llm_confidence = (sum(confidences) / len(confidences)) if confidences else None
     pass_rates = [
@@ -378,6 +385,9 @@ def score(
         pipeline_total_tokens_in=pipeline_total_tokens_in,
         pipeline_total_tokens_out=pipeline_total_tokens_out,
         pipeline_cache_hit_rate=pipeline_cache_hit_rate,
+        pipeline_dollars_in=pipeline_dollars_in,
+        pipeline_dollars_out=pipeline_dollars_out,
+        pipeline_dollars_total=pipeline_dollars_total,
         entries=entries,
     )
 

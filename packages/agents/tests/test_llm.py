@@ -80,7 +80,7 @@ class TestClaudeProviderStructured:
 
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-fake"})
     def test_structured_returns_disk_cached_result_without_calling_anthropic(self) -> None:
-        from agents.llm import ClaudeProvider, prompt_cache_key
+        from agents.llm import ClaudeProvider
 
         with patch("agents.llm._cache") as mock_cache:
             cached_payload = {"pattern": "derived", "confidence": 0.55}
@@ -101,6 +101,8 @@ class TestClaudeProviderRequiresApiKey:
         from agents.llm import ClaudeProvider
 
         # Strip env to test the guard
-        with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
-                ClaudeProvider()
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"),
+        ):
+            ClaudeProvider()

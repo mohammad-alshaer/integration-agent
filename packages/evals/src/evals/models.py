@@ -104,4 +104,8 @@ class EvalReport(BaseModel):
     pipeline_total_tokens_in: int = 0
     pipeline_total_tokens_out: int = 0
     pipeline_cache_hit_rate: float | None = None
+    # M2.7: token totals × per-provider pricing. See evals/pricing.py.
+    pipeline_dollars_in: float = 0.0
+    pipeline_dollars_out: float = 0.0
+    pipeline_dollars_total: float = 0.0
     entries: list[ScoreEntry] = Field(default_factory=list)

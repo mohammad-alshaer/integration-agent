@@ -167,7 +167,7 @@ class _FakeSandbox:
         v = f"main_staging.{schema}_{table}"
         return v if v in self._views else None
 
-    def execute(self, sql: str) -> "_FakeSandbox":
+    def execute(self, sql: str) -> _FakeSandbox:
         # Minimal SQL parser — find which view name the query references
         for view, rows in self._views.items():
             if view in sql:
@@ -427,3 +427,39 @@ def test_score_pipeline_telemetry_passthrough() -> None:
     assert report.pipeline_total_tokens_in == 240_000
     assert report.pipeline_total_tokens_out == 40_000
     assert report.pipeline_cache_hit_rate == 0.25
+
+
+def test_score_pipeline_dollars_uses_pricing_table() -> None:
+    """M2.7: pipeline_dollars_total is computed from tokens × per-provider pricing."""
+    exp = _file(_expected("dbo.T.a", Pattern.RENAME, ["s.S.a"]))
+    s = _spec("dbo.T.a", ["s.S.a"], Pattern.RENAME, "SELECT a AS a")
+    # Gemini Flash: $0.075/M input, $0.30/M output
+    report = score(
+        exp,
+        [s],
+        provider="gemini",
+        model="gemini-2.5-flash",
+        run_id="t1",
+        pipeline_total_tokens_in=1_000_000,  # 1M input tokens -> $0.075
+        pipeline_total_tokens_out=1_000_000,  # 1M output tokens -> $0.30
+    )
+    assert report.pipeline_dollars_in == pytest.approx(0.075)
+    assert report.pipeline_dollars_out == pytest.approx(0.30)
+    assert report.pipeline_dollars_total == pytest.approx(0.375)
+
+
+def test_score_pipeline_dollars_unknown_provider_defaults_to_zero() -> None:
+    """M2.7: an unknown (provider, model) returns $0 — no exceptions raised."""
+    exp = _file(_expected("dbo.T.a", Pattern.RENAME, ["s.S.a"]))
+    s = _spec("dbo.T.a", ["s.S.a"], Pattern.RENAME, "SELECT a AS a")
+    report = score(
+        exp,
+        [s],
+        provider="someone-new",
+        model="some-model",
+        run_id="t1",
+        pipeline_total_tokens_in=1_000_000,
+        pipeline_total_tokens_out=500_000,
+    )
+    # Defaults to (0.0, 0.0) for unknown provider/model
+    assert report.pipeline_dollars_total == 0.0

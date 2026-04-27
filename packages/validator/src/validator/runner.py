@@ -25,7 +25,14 @@ from dataclasses import dataclass
 
 import duckdb
 
-from schemas import ColumnProfile, ErrorHint, ErrorKind, MappingSpec, SchemaProfile, ValidationReport
+from schemas import (
+    ColumnProfile,
+    ErrorHint,
+    ErrorKind,
+    MappingSpec,
+    SchemaProfile,
+    ValidationReport,
+)
 from validator.error_hints import normalize_error
 from validator.sandbox import Sandbox
 
