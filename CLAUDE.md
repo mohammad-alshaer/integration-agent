@@ -8,7 +8,7 @@ Multi-agent AI system that automates schema mapping + dbt-model generation for d
 
 **Baselines preserved on disk:** `benchmarks/adventureworks/out/eval_report.m1-baseline.json`, `eval_report.m2-1-baseline.json`, `eval_report.m2-2-final.json`, `eval_report.m2-3-final.json`, `eval_report.m2-3-x-final.json`, `eval_report.m2-complete.json` (all gitignored but kept). Diff against `eval_report.json` to measure any future change.
 
-**M4 starts here:** Next.js 14 + shadcn/ui frontend that calls the M3 service. Per the original stack plan, M4 is the browser-facing UI; the API contract is already locked (`MapRequest`/`MapResponse`/`EvalSummary` in `packages/schemas/api.py`, CORS allow-origin set to `http://localhost:3000`). Anything still on the eval side (JOIN-aware retrieval for TaxAmt/Freight EXACT, real Claude A/B run via the M2.5 ClaudeProvider) is a parallel/optional workstream — not blocking M4. Write a new plan file for M4.
+**M4 starts here:** Next.js 14 + shadcn/ui frontend that calls the M3 service. Per the original stack plan, M4 is the browser-facing UI; the API contract is already locked (`MapRequest`/`MapResponse`/`EvalSummary` in `packages/schemas/api.py`, CORS allow-origin set to `http://localhost:3000`). **`DESIGN.md` (root of repo) is the canonical UI inspiration** — a Composio-derived design system (dark theme, electric-cyan + Composio-cobalt accents, abcDiatype + JetBrains Mono, ultra-tight heading line-heights, brutalist offset shadows, bioluminescent glows). Tell Claude to read `DESIGN.md` before writing any UI; the goal is "developer terminal aesthetic" that matches the DataOps + dbt audience, not generic SaaS-pastel. Anything still on the eval side (JOIN-aware retrieval for TaxAmt/Freight EXACT, real Claude A/B run via the M2.5 ClaudeProvider) is a parallel/optional workstream — not blocking M4. Write a new plan file for M4.
 
 **Canonical M3 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\lets-start-working-on-refactored-prism.md` — describes the FastAPI scope: 4 endpoints, sync-in-threadpool, glob-based eval lookup, CORS for the M4 dev origin. Useful context but M3 is shipped.
 
@@ -73,6 +73,7 @@ Integration-Agent/
 ├── .env.example                     template (committed; no secrets)
 ├── pyproject.toml                   root; deps + ruff/mypy/pytest config
 ├── CLAUDE.md                        this file
+├── DESIGN.md                        Composio-inspired design system (M4 UI reference; dark theme, cyan/cobalt accents, JetBrains Mono + abcDiatype). Generated via `npx getdesign@latest add composio`.
 │
 ├── scripts/
 │   ├── check_sqlserver.py           SQL Server connectivity + DB list
@@ -297,12 +298,14 @@ M3 is shipped (commit `36a429f`). M4 is the Next.js + shadcn frontend per the or
 
 ### M4 — Next.js 14 + shadcn UI (THE NEXT MILESTONE)
 
-Browser-facing app calling the M3 API. Concrete starting set:
-- **Page 1 — `/map`**: paste/upload source + target SchemaProfile JSON, pick a target table, hit `POST /map`. Render the returned `MappingSpec[]` with pattern badges (RENAME / CONCAT / DERIVED), per-spec SQL block, classifications + validation summaries, total `elapsed_sec`. Long-request UX (10s–5min) is the load-bearing piece — start with a spinner + the 600s API timeout; streaming + job IDs are M4.x.
-- **Page 2 — `/eval`**: list `EvalSummary[]` from `GET /eval`. Click through to `GET /eval/{run_id}` for full `EvalReport` — render the rates matrix (inclusive/exclusive × exact/pattern/sql_exec/sql_semantic) and the per-spec `ScoreEntry` table with disputed-row highlighting.
-- **Page 3 — `/health`**: just `GET /health` + the `?deep=true` button.
+Browser-facing app calling the M3 API. **Read `DESIGN.md` first** — it defines the visual vocabulary (Void Black `#0f0f0f` canvas, Composio Cobalt `#0007cd` + Electric Cyan `#00ffff` accents, dual-font abcDiatype + JetBrains Mono, ultra-tight 0.87 heading line-heights, brutalist 4px-offset shadows, bioluminescent radial glows, ~12% white-opacity borders for containment). The aim is a developer-terminal aesthetic that signals "tool for engineers" rather than generic SaaS — fits the DataOps + dbt audience and the Dar CIO meeting framing.
 
-Stack: Next.js 14 (app router), shadcn/ui, TypeScript, fetch (no need for SWR in M4), Tailwind. Auth: still out of scope. **Run side-by-side on `localhost:3000` against the API on `localhost:8000`** — CORS is already wired. Type-share: generate TS types from the FastAPI OpenAPI schema (`/openapi.json`) so `MapRequest` / `MappingSpec` / `EvalReport` stay aligned without hand-coding.
+Concrete starting set:
+- **Page 1 — `/map`**: paste/upload source + target SchemaProfile JSON, pick a target table, hit `POST /map`. Render the returned `MappingSpec[]` with pattern badges (RENAME / CONCAT / DERIVED in cyan/cobalt), per-spec SQL block in JetBrains Mono inside a dark card with whisper-white border, classifications + validation summaries, total `elapsed_sec`. Long-request UX (10s–5min) is the load-bearing piece — start with a cyan-pulsing spinner + the 600s API timeout; streaming + job IDs are M4.x.
+- **Page 2 — `/eval`**: list `EvalSummary[]` from `GET /eval` as a dense table. Click through to `GET /eval/{run_id}` for full `EvalReport` — render the rates matrix (inclusive/exclusive × exact/pattern/sql_exec/sql_semantic) and the per-spec `ScoreEntry` table with disputed-row highlighting (dim text + "disputed" tag in 12px overline).
+- **Page 3 — `/health`**: just `GET /health` + the `?deep=true` button as a status pill, probably in a footer or top-bar slot.
+
+Stack: Next.js 14 (app router), shadcn/ui, TypeScript, fetch (no need for SWR in M4), Tailwind configured to the `DESIGN.md` color palette + font stack. Auth: still out of scope. **Run side-by-side on `localhost:3000` against the API on `localhost:8000`** — CORS is already wired. Type-share: generate TS types from the FastAPI OpenAPI schema (`/openapi.json`) so `MapRequest` / `MappingSpec` / `EvalReport` stay aligned without hand-coding. shadcn primitives (Form, Card, Table, Tabs, Badge, Button) get re-themed via the Tailwind tokens in `DESIGN.md` rather than using the default shadcn palette.
 
 ### Optional parallel work (not blocking M4)
 
@@ -363,7 +366,7 @@ Shipped: 4 endpoints, 7 offline tests, ADR 0005, CORS, opt-in deep health, glob-
 
 ## When in doubt
 
-1. **For M4 (Next.js + shadcn) work:** read the "What's left — M4 starts here" section above. Generate TS types from the FastAPI OpenAPI schema (`localhost:8000/openapi.json`) so `MapRequest` / `MappingSpec` / `EvalReport` stay aligned. Run the API and the frontend side-by-side; CORS is already wired for `localhost:3000`.
+1. **For M4 (Next.js + shadcn) work:** **read `DESIGN.md` first** — it's the design-system contract for the UI (palette, typography, atmosphere). Then read the "What's left — M4 starts here" section above. Generate TS types from the FastAPI OpenAPI schema (`localhost:8000/openapi.json`) so `MapRequest` / `MappingSpec` / `EvalReport` stay aligned. Run the API and the frontend side-by-side; CORS is already wired for `localhost:3000`.
 2. **For M3 (API) edits:** the canonical references are `apps/api/src/api/main.py` (lifespan + CORS), `apps/api/src/api/routers/{health,map,eval}.py`, and `docs/adr/0005-fastapi-service-layer.md`. The 7 offline tests in `apps/api/tests/test_routes.py` are the contract guard.
 3. **For project history:** the M1 plan at `~/.claude/plans/i-want-to-do-jiggly-yeti.md`, the M2-evolution plan at `~/.claude/plans/continue-with-m2-1-from-lexical-barto.md` (covers M2.1 → M2.7), and the M3 plan at `~/.claude/plans/lets-start-working-on-refactored-prism.md` are reference-only.
 4. **Memory:** check `MEMORY.md` for project/feedback notes about Mohammad's preferences and corporate environment specifics.
