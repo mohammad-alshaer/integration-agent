@@ -37,16 +37,20 @@ class RunnerConfig:
     max_retries: int = 1
 
 
-def _build_llm(provider: str) -> LLMClient:
+def _build_llm(provider: str, model: str | None = None) -> LLMClient:
     if provider == "gemini":
         from agents.llm import GeminiProvider
 
-        return GeminiProvider()
+        return GeminiProvider(model=model)
+    if provider == "claude":
+        from agents.llm import ClaudeProvider
+
+        return ClaudeProvider(model=model)
     if provider == "fake":
         from evals._fakes import build_smoke_fake_llm
 
         return build_smoke_fake_llm()
-    raise ValueError(f"unknown provider {provider!r}; expected 'gemini' or 'fake'")
+    raise ValueError(f"unknown provider {provider!r}; expected 'gemini', 'claude', or 'fake'")
 
 
 def _build_embedder(provider: str) -> Embedder:
@@ -74,7 +78,7 @@ def run_eval(cfg: RunnerConfig) -> EvalReport:
         len(expected_file.mappings),
     )
 
-    llm = _build_llm(cfg.provider)
+    llm = _build_llm(cfg.provider, cfg.model)
     embedder = _build_embedder(cfg.provider)
     store = SourceVectorStore(cfg.vector_db, embedder)
     if cfg.rebuild_index:
