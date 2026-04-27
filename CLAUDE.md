@@ -218,7 +218,7 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
-<pending> Refresh CLAUDE.md for M2.3-complete state                         (114 tests)
+07d3fd0  Refresh CLAUDE.md for M2.3-complete state                         (114 tests)
 ac5feca  M2.3: Lift PATTERN/SQL_SEMANTIC to 100% exclusive via matcher domain alignment + classifier softening + k=15 (114 tests)
 a856a09  Fill in M2.2 CLAUDE.md refresh hash                              (114 tests)
 1fab32e  Refresh CLAUDE.md for M2.2-complete state                         (114 tests)
