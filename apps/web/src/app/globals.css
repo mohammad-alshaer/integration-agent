@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* DESIGN.md palette */
+  --color-cobalt: #0007cd;
+  --color-cyan: #00ffff;
+  --color-cyan-glow: rgba(0, 255, 255, 0.12);
+  --color-signal: #0089ff;
+  --color-ocean: #0096ff;
+  --color-void: #0f0f0f;
+  --color-charcoal: #2c2c2c;
+  --color-smoke: #444444;
+  --color-ghost: rgba(255, 255, 255, 0.6);
+  --color-whisper: rgba(255, 255, 255, 0.5);
+  --color-phantom: rgba(255, 255, 255, 0.2);
+  --color-mist-12: rgba(255, 255, 255, 0.12);
+  --color-mist-10: rgba(255, 255, 255, 0.10);
+  --color-mist-08: rgba(255, 255, 255, 0.08);
+  --color-mist-06: rgba(255, 255, 255, 0.06);
+  --color-mist-04: rgba(255, 255, 255, 0.04);
+
+  /* Fonts wired from next/font/google in layout.tsx */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-jetbrains-mono);
+
+  /* DESIGN.md radius scale: near-square -> workhorse -> pill */
+  --radius-sharp: 2px;
+  --radius-md: 4px;
+  --radius-pill: 37px;
+
+  /* DESIGN.md depth: brutalist offset + soft float */
+  --shadow-brutalist: 4px 4px 0px 0px rgba(0, 0, 0, 0.15);
+  --shadow-floating: 0px 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+html,
+body {
+  background: var(--color-void);
+  color: #ffffff;
+}
+
+body {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+}
+
+code,
+pre,
+.font-mono {
+  font-family: var(--font-mono), ui-monospace, "Menlo", "Consolas", monospace;
+  letter-spacing: -0.01em;
+}

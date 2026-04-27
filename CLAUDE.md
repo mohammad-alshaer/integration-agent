@@ -86,8 +86,10 @@ Integration-Agent/
 ├── apps/
 │   ├── worker/                      typer CLI (integration-agent-worker)
 │   │                                subcommands: profile, run, version
-│   └── api/                         FastAPI service (integration-agent-api)
-│                                    endpoints: GET /health [+?deep], POST /map, GET /eval[/{run_id}]
+│   ├── api/                         FastAPI service (integration-agent-api)
+│   │                                endpoints: GET /health [+?deep], POST /map, GET /eval[/{run_id}]
+│   └── web/                         Next.js 16 + Tailwind v4 + React 19 frontend (M4.1: /, /eval, /eval/[run_id])
+│                                    Server Components + server-side fetch against M3 API. NEXT_PUBLIC_API_BASE_URL.
 │
 ├── packages/
 │   ├── schemas/                     Pydantic contracts: profile, candidates, patterns,
@@ -187,6 +189,14 @@ curl -s localhost:8000/health | python -m json.tool
 curl -s localhost:8000/eval | python -m json.tool
 # CORS preflight from the M4 Next.js dev origin:
 curl -i -X OPTIONS localhost:8000/map -H "Origin: http://localhost:3000" -H "Access-Control-Request-Method: POST"
+
+# Run the Next.js frontend locally (M4.1). Defaults to http://localhost:3000.
+# In one terminal: uvicorn (above). In another:
+npm --prefix apps/web run dev               # dev server, hot reload
+npm --prefix apps/web run lint              # ESLint flat config
+npm --prefix apps/web run build             # production build (also type-checks)
+# Override the API base URL via env var (.env.local in apps/web/):
+#   NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 ```
 
 ---
@@ -361,6 +371,14 @@ Shipped: 4 endpoints, 7 offline tests, ADR 0005, CORS, opt-in deep health, glob-
 21. **`store.add_columns(req.source_profile)` runs on every `/map` request.** Embedder content cache makes repeat embeddings free; the HNSW rebuild is sub-second for AdventureWorks (~500 columns). `rebuild_index=true` in the body additionally calls `store.reset()` first. If you ever pin a single source profile per process and want to skip this, gate behind a profile-hash check — but the current behavior is correct (each request reflects its profile) at trivial cost.
 
 22. **Eval lookup globs `benchmarks/*/out/eval_report*.json`** (`apps/api/src/api/eval_lookup.py`) with a 60s in-memory TTL cache. The eval runner stays untouched; existing baseline files (`eval_report.m1-baseline.json`, `eval_report.m2-complete.json`, etc.) are discovered for free. If you ever delete or rename a report file mid-conversation, call `eval_lookup.invalidate_cache()` or wait 60s.
+
+23. **`apps/web/` is Next.js 16 + React 19 + Tailwind v4** (NOT v14/v3 from training data). Breaking-change cheatsheet: (a) `params` in dynamic routes is `Promise<{...}>` — must `await params` (use `PageProps<'/eval/[run_id]'>` helper). (b) Tailwind theme lives in `src/app/globals.css` `@theme inline {}` block, not `tailwind.config.ts` (no JS config file is generated). Color/font/shadow tokens are defined as CSS custom properties (`--color-*`, `--font-*`, `--shadow-*`) and become utilities automatically. (c) ESLint flat config (`eslint.config.mjs`), Next config in TS (`next.config.ts`). (d) The bundled docs at `apps/web/node_modules/next/dist/docs/` are the authoritative breaking-change reference — read them before diverging from generated patterns.
+
+24. **abcDiatype is paid (ABC Dinamo) — Geist Sans is the substitute.** `apps/web/src/app/layout.tsx` wires `Geist` (sans) + `JetBrains_Mono` (mono) via `next/font/google` — Geist is geometric sans-serif, closer to abcDiatype than Inter. Documented in DESIGN.md as the substitution. JetBrains Mono is loaded exactly as DESIGN.md specifies.
+
+25. **`apps/web` TS types are hand-mirrored from Python contracts** in `apps/web/src/lib/api.ts` — `EvalSummary`, `EvalReport`, `ScoreEntry`, `MatchLevel`, `Pattern`. The file's header comment lists the Python source-of-truth paths. If you rename a Python field, update both sides. Auto-generation from `/openapi.json` is M4.x.
+
+26. **Next.js dev defaults to port 3000; CORS in the API only allows `http://localhost:3000`.** Don't change either independently. If the dev server can't bind 3000 (already taken), set `INTEGRATION_AGENT_API_CORS_ORIGIN=http://localhost:<other>` on the API process to keep them aligned.
 
 ---
 
