@@ -2,13 +2,13 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** **M2.2 complete** (tag `m2.2-complete`). Real-LLM accuracy on AdventureWorks (Gemini 2.5 Flash, paid tier-1): **73.7% inclusive / 90.0% exclusive** exact match (was 71.1% / 90.0% at M2.1.x; +2.6pp inclusive). RENAME 28/30 EXACT (was 26/30 — Phase A enrichment unlocked SalesAmount → RENAME[LineTotal] and ListPrice → RENAME[Production.Product.ListPrice]); DERIVED 0/8 EXACT (was 1/8 — ExtendedAmount regressed because the model now picks `Purchasing.PurchaseOrderDetail.LineTotal` over `Sales.SalesOrderDetail.LineTotal`; both have identical formula text). **Multi-source JOIN infrastructure landed** (validator FK-aware FROM clause synthesis + DerivedGenerator multi-source-mode + dbt_emit `intermediate/int_*.sql` model emission) but is unexercised by the AdventureWorks goldens this milestone — the classifier still picks single-table RENAME for TaxAmt/Freight/etc. **9/10 dbt models build clean** (HumanResources.Employee ODBC type -151 still the known fail). 30+ commits on `main`, 114 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Total M2.2 LLM spend: ~4 cents at Flash tier-1 (3 eval re-runs + target enrichment LLM pass).
+**Current milestone:** **M2.3 complete** (tag `m2.3-complete`). Real-LLM accuracy on AdventureWorks (Gemini 2.5 Flash, paid tier-1): **73.7% inclusive / 90.0% exclusive** exact match (unchanged headline EXACT vs M2.2 — net 0 from +1 ExtendedAmount EXACT and -1 CustomerKey regression). The M2.3 win is at the partial-match levels: **PATTERN 84.2% inclusive / 100.0% exclusive** (was 76.3 / 96.7), **SQL_SEMANTIC 89.5% inclusive / 100.0% exclusive** (was 78.9 / 96.7). Every non-disputed spec now produces a spec with the correct pattern + the right source-column tokens — the classifier no longer falls back to `unsupported_in_m1` when canonical sources are partially missing. RENAME 27/30 EXACT (CustomerKey EXACT → PATTERN; matcher's domain-alignment instruction overgeneralizes Sales.Customer vs Person.BusinessEntity); DERIVED 1/8 EXACT (ExtendedAmount recovered from Purchasing-LineTotal mistake). Multi-source JOIN infra (M2.2) still dormant — TaxAmt + Freight reach PATTERN (DERIVED with 1-of-3 sources) but not EXACT; full unlock needs FK-aware retrieval (M2.X). **9/10 dbt models build clean** (HumanResources.Employee ODBC type -151 still the known fail). 33+ commits on `main`, 114 tests passing, public repo at https://github.com/mohammad-alshaer/integration-agent. Total M2.3 LLM spend: ~1 cent at Flash tier-1 (2 eval re-runs).
 
-**Baselines preserved on disk:** `benchmarks/adventureworks/out/eval_report.m1-baseline.json`, `eval_report.m2-1-baseline.json`, `eval_report.m2-2-final.json` (all gitignored but kept). Diff against `eval_report.json` to measure any future change.
+**Baselines preserved on disk:** `benchmarks/adventureworks/out/eval_report.m1-baseline.json`, `eval_report.m2-1-baseline.json`, `eval_report.m2-2-final.json`, `eval_report.m2-3-final.json` (all gitignored but kept). Diff against `eval_report.json` to measure any future change.
 
-**M2.3+ starts here:** Read the "What's left — M2 entry-points" section at the bottom. The most surprising M2.2 finding: **the classifier is the bottleneck for unlocking the multi-source JOIN infrastructure.** Even with rich descriptions and a working JOIN-aware validator, the classifier picks single-table RENAME for TaxAmt/Freight rather than multi-source DERIVED. The retrieval-side improvement of M2.2-A unlocked SalesAmount but didn't reach TaxAmt/Freight because their target descriptions don't surface multi-table candidates.
+**M2.X starts here:** Read the "What's left — M2 entry-points" section at the bottom. The most surprising M2.3 finding: **classifier softening + matcher domain alignment + k=15 lifted PATTERN/SQL_SEMANTIC to 100% exclusive**, but the last 2-3 EXACTs (TaxAmt, Freight, possibly DiscountAmount) need FK-aware retrieval to surface Detail.LineTotal in the candidate set. M2.2's JOIN infrastructure remains ready to be exercised once that retrieval gap closes.
 
-**Canonical M2.1+M2.1.x+M2.2 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\continue-with-m2-1-from-lexical-barto.md` — final state describes the M2.2 scope, predicted vs actual outcomes, and stop/cut decisions. Write a new plan file for M2.3 work.
+**Canonical evolved plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\continue-with-m2-1-from-lexical-barto.md` — describes the M2.1+M2.1.x+M2.2 evolution; M2.3 was executed without re-writing the plan file (smaller scope). Write a new plan file for the next milestone.
 
 **Canonical M1 plan (historical reference):** `C:\Users\mfalshaer\.claude\plans\i-want-to-do-jiggly-yeti.md` — describes the M1 scope; useful context but M1 is shipped. Write a new plan file for M2 work; don't edit the M1 one.
 
@@ -218,6 +218,9 @@ Every `packages/*/` has its own `pyproject.toml`. Install every workspace packag
 ## Current status (commit log, newest first)
 
 ```
+<pending> Refresh CLAUDE.md for M2.3-complete state                         (114 tests)
+ac5feca  M2.3: Lift PATTERN/SQL_SEMANTIC to 100% exclusive via matcher domain alignment + classifier softening + k=15 (114 tests)
+a856a09  Fill in M2.2 CLAUDE.md refresh hash                              (114 tests)
 1fab32e  Refresh CLAUDE.md for M2.2-complete state                         (114 tests)
 fc83c60  M2.2: Lift accuracy 71.1% -> 73.7% via target enrichment + multi-source JOIN infrastructure (114 tests)
 f31f7b3  Fill in M2.1.x commit hash in CLAUDE.md log                          (108 tests)
@@ -255,33 +258,31 @@ df0a8ae  M0 Day 4 scaffolding: Gemini + Langfuse ready for API keys
 2df890d  M0 Day 1: scaffold
 ```
 
-Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1-complete` on `4346c93`, `m2.2-complete` on `fc83c60` (latest).
+Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1-complete` on `4346c93`, `m2.2-complete` on `fc83c60`, `m2.3-complete` on `ac5feca` (latest).
 Public repo: https://github.com/mohammad-alshaer/integration-agent — first push landed mid-M1 session.
 
 ---
 
 ## What's left — M2 entry-points
 
-M1 + M2.1 + M2.1.x + M2.2 are shipped + tagged + pushed. M2.3+ starts here. Ordered by impact-to-effort:
+M1 + M2.1 + M2.1.x + M2.2 + M2.3 are shipped + tagged + pushed. M2.X starts here. Ordered by impact-to-effort:
 
-### M2.2.x — ExtendedAmount disambiguation (small, follow-up)
+### M2.X.a — JOIN-aware second-pass retrieval (the last EXACT unlock)
 
-M2.2's Phase A enrichment unlocked SalesAmount but introduced a regression: `dbo.FactInternetSales.ExtendedAmount` now picks `Purchasing.PurchaseOrderDetail.LineTotal` instead of `Sales.SalesOrderDetail.LineTotal`. Both have identical formula text in the source profile (`OrderQty * UnitPrice`-style), so the embedder/rerank can't distinguish them by formula alone. The signal that should disambiguate them — "this target is from FactInternetSales, which is about internet SALES, prefer Sales.* sources over Purchasing.*" — isn't surfaced in the matcher prompt today.
+M2.3 lifted partial-match metrics to 100% exclusive but didn't move EXACT. The remaining 2-3 EXACTs (TaxAmt, Freight, possibly DiscountAmount) are blocked at retrieval — Detail.LineTotal isn't in their classifier candidates even at k=15, because the embedder ranks "money/amount"-type columns from semantically-aligned tables higher than columns with structurally-similar names from FK-linked tables.
 
-**Approaches to evaluate (~30 min each):**
-- Add target-table-context line to `_format_target` in `semantic_matcher.py` (e.g. "Target table: FactInternetSales — fact table for internet sales transactions")
-- Extend Schema Explorer to also generate per-table descriptions, then surface in the matcher prompt
-- Add an additional accepted_alternative to ExtendedAmount golden (semantically wrong — Purchasing isn't equivalent — so this is a no)
+**Proposed approach (~30-50 LoC):** After the first matcher pass returns top-K, scan the source profile for FK-linked tables of the top-K's source tables. For each FK-linked table, surface its top-3 columns by name similarity to the target — append to the candidate set. The classifier then sees Header.X + Header.SubTotal + Detail.LineTotal together and the M2.3 TaxAmt few-shot fires correctly. M2.2's JOIN infrastructure (validator FK-aware FROM clause + dbt_emit `intermediate/` models + DerivedGenerator multi-source mode) is already in place — this just feeds it real specs.
 
-### M2.3 — Make the classifier emit multi-source DERIVED
+**Expected lift:** TaxAmt + Freight + maybe DiscountAmount → EXACT. DERIVED 1/8 → 3-4/8. Headline 73.7% → ~78-80% inclusive.
 
-M2.2 landed the multi-source JOIN infrastructure (validator, dbt_emit `intermediate/` models, generator multi-source mode) but the classifier still picks single-table RENAME for TaxAmt/Freight. The infra is dormant infrastructure ready to be exercised by future classifier improvements.
+### M2.X.b — CustomerKey domain-alignment regression
 
-**Why M2.2's Phase B2 (TaxAmt few-shot) failed:** Same failure mode as M2.1.x DiscountAmount — when the canonical sources aren't all in the top-K candidates, the model falls back to `unsupported_in_m1` instead of attempting. Fixes require:
-- **Better cross-table retrieval** (target descriptions that reference allocation patterns, OR a JOIN-aware retrieval step that surfaces FK-linked candidates), AND
-- **Classifier robustness** (handle "few-shot suggests N sources but candidates have M < N" gracefully — emit DERIVED with M sources rather than UNSUPPORTED).
+M2.3's matcher domain-alignment instruction overgeneralizes: model now picks `Person.BusinessEntity.BusinessEntityID` over `Sales.Customer.CustomerID` for `dbo.DimCustomer.CustomerKey`. Both are valid (BusinessEntity is the parent of Customer via FK), but the golden expects the more specific Customer table.
 
-This is genuinely complex and may need its own multi-step plan.
+**Quick fix candidates (~15 LoC each):**
+- Sharpen the matcher's domain-alignment instruction to be specifically about WRONG-domain (Purchasing vs Sales) rather than RELATED-but-different-domain (Customer vs BusinessEntity). E.g., "prefer the most specific source — Customer beats BusinessEntity if both contain CustomerID".
+- Add a CustomerKey-style few-shot to the classifier showing the disambiguation.
+- Re-author the golden with an `accepted_alternative` for `[Person.BusinessEntity.BusinessEntityID]` — both are arguably correct in production.
 
 ### M2.4 — DuckDB-executed SQL equivalence (4th match level)
 
@@ -317,7 +318,13 @@ Telemetry now reports tokens; per-provider price tables would convert that to do
 
 9. **Multi-source JOIN infrastructure (M2.2 Phase B1) is live but unexercised.** `validator.runner._resolve_from` handles 2-table specs by FK lookup via `ColumnProfile.fk_ref`; `dbt_emit.write_models` emits `intermediate/int_*.sql` JOIN models when `source_profile` is supplied; `DerivedGenerator` understands multi-source-table mode (TABLE.column prefixes, JOIN HINT in user prompt). But the classifier still picks single-table RENAME for TaxAmt/Freight, so this code path runs only on synthetic test fixtures, not real eval specs. Future M2.3 work to make the classifier emit multi-source DERIVED will exercise this for free.
 
-10. **Known M2.2 regression — ExtendedAmount.** Was EXACT in M2.1 (via the RENAME[Sales.SalesOrderDetail.LineTotal] alternative); is MISMATCH in M2.2 because the model now picks `Purchasing.PurchaseOrderDetail.LineTotal` (same formula text, wrong domain). Documented as M2.2.x. Quick fixes to try: target-table-context line in `_format_target` of `semantic_matcher.py`; or per-table description enrichment.
+10. **M2.2 regression fixed in M2.3.** ExtendedAmount → EXACT after adding the matcher's "Target table:" emphasis + domain-alignment system-prompt instruction. Generalizable lesson: the FQN-in-prompt isn't enough — the LLM weights an explicit "Target table:" labelled line more strongly.
+
+11. **M2.3 partial-match softening + classifier robustness.** The classifier no longer falls back to `unsupported_in_m1` when a few-shot's canonical sources aren't all in candidates. Instead it emits `derived` with the available subset and a calibrated lower confidence (0.3-0.5). This produces useful PARTIAL matches — TaxAmt and DiscountAmount went from MISSING to PATTERN — but doesn't produce EXACT until retrieval surfaces the missing sources. Don't conflate the softening fix with a retrieval fix.
+
+12. **Known M2.3 regression — CustomerKey.** Was EXACT in M2.2; is PATTERN in M2.3 because the matcher's domain-alignment instruction overgeneralizes to "prefer Person.BusinessEntity over Sales.Customer for the CustomerKey target." Both are technically valid (BusinessEntity is the FK parent of Customer), but the golden expects Customer. Documented as M2.X.b. The matcher's domain instruction needs sharpening — should fire for cross-domain mistakes (Purchasing vs Sales) but not for parent-vs-child within a domain.
+
+13. **k=15 is now the matcher default** (was 10 through M2.2). Bumped in semantic_matcher.match_target_columns + graph.compile_graph + evals.RunnerConfig + evals CLI option. Matcher prompt grows ~50% in candidate-list tokens; cache-hit re-runs are unaffected; per-call cost increase is sub-cent. If you bump it again (e.g. to 20), update all 4 places.
 
 ---
 
