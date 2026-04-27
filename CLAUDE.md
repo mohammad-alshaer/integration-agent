@@ -2,7 +2,9 @@
 
 Multi-agent AI system that automates schema mapping + dbt-model generation for data integration (OLTP → analytical warehouse). Primary benchmark: **AdventureWorks OLTP → AdventureWorksDW**. Built as a personal portfolio project by Mohammad Falshaer (new-grad DataOps engineer, Dar Al-Handasah) to showcase at Dar's weekly CIO AI-agent meeting.
 
-**Current milestone:** **M4 COMPLETE** (umbrella tag `m4-complete` on commit `998b52f`). The full M4 series shipped: M4.1 → M4.2 → M4.3. Browser-facing UI for the M3 service at `apps/web/`: Next.js 16 + React 19 + Tailwind v4 + TypeScript, `DESIGN.md`-driven Composio aesthetic (Void Black canvas, Composio Cobalt + Electric Cyan accents, Geist Sans + JetBrains Mono via `next/font/google`, brutalist 4px-offset shadow utility, 0.87 heading line-heights). 6 user routes: `/` (landing with hero gradient + nav cards), `/eval` (server-component table over `GET /eval`), `/eval/[run_id]` (rates matrix card + per-spec ScoreEntry table with disputed-row dimming), `/map` (client-component form with file upload + AbortController-cancel + cyan elapsed-timer for 10s–5min POST `/map` requests), `/health` (full HealthResponse surface + opt-in deep probe button), `not-found.tsx`. HealthPill in the Brand header polls `GET /health` every 30s. **CORS pre-wired**, no auth, no JS-side tests yet (M4.x). Verification: `npm run lint` clean, `npm run build` green, Python regression stays at **137 passed** (130 packages + 7 in `apps/api/tests/`).
+**Project status:** **SHIPPED, end-to-end.** Latest commit `4d4a693` (tag `m4.x.1-redesign`). The full M0 → M4 stack landed plus a single M4.x polish pass that turned the landing into a modern 3D dark dashboard (animated aurora atmosphere + glassmorphism + floating MappingSpec preview card + stats anchor row + tech-stack chips), extended that visual language across every other route, added smooth CSS-driven page transitions (`page-fade-in` keyframe + `key={pathname}` re-mount in `<PageTransition>`), turned `ProfileUploader` into a real drag-and-drop dropzone, and strengthened `/eval` table hover. CLI → FastAPI → Next.js, all on the public repo.
+
+**Current milestone:** **M4 COMPLETE + M4.x.1-redesign polish** (umbrella tag `m4-complete` on `998b52f`, polish tag `m4.x.1-redesign` on `4d4a693`). The full M4 series shipped: M4.1 → M4.2 → M4.3, then the redesign pass. Browser-facing UI at `apps/web/`: Next.js 16 + React 19 + Tailwind v4 + TypeScript, `DESIGN.md`-driven Composio aesthetic (Void Black canvas, Composio Cobalt + Electric Cyan accents, Geist Sans + JetBrains Mono via `next/font/google`, brutalist 4px-offset shadow utility, 0.87 heading line-heights, glass cards with backdrop-blur, gradient cyan/cobalt rims, 4-blob aurora). 6 user routes: `/` (3D hero with floating MappingSpec preview), `/eval` (glass DataTable with cyan-tinted high values + cyan-inset hover), `/eval/[run_id]` (glass-rim rates matrix + glass entries table), `/map` (glass form panels + drag-drop ProfileUploader + glass-rim result panel), `/health` (glass status card + cta-primary deep probe), `not-found.tsx` (gradient text). HealthPill in the Brand header polls `GET /health` every 30s. **CORS pre-wired**, no auth, no JS-side tests. Verification: `npm run lint` clean, `npm run build` green, Python regression stays at **137 passed** (130 packages + 7 in `apps/api/tests/`).
 
 **Prior milestone:** **M3 COMPLETE** — FastAPI service layer (commit `36a429f`). The mapping graph is reachable as an HTTP service: `GET /health [+?deep]`, `POST /map`, `GET /eval`, `GET /eval/{run_id}`. Sync handler in `asyncio.to_thread` under a global `asyncio.Lock`, 600s hard timeout, single target table per request, inline `SchemaProfile` Pydantic in the request body, glob-based eval lookup with a 60s TTL cache. ADR `docs/adr/0005-fastapi-service-layer.md` captures the decisions.
 
@@ -257,6 +259,7 @@ b76cbc1  M4.2: /map page with profile upload + long-request UX             (137 
 50fec54  M4.1: scaffold apps/web (Next.js 16 + Tailwind v4) + /eval pages  (137 tests)
 9c30e9c  Add DESIGN.md and wire it into CLAUDE.md as the M4 UI reference   (137 tests)
 7dc018f  Fill in M3-complete CLAUDE.md refresh hash                        (137 tests)
+# (older entries below were captured during M4 work — kept for history)
 e262e7d  Refresh CLAUDE.md for M3-complete state                           (137 tests)
 36a429f  M3: FastAPI service layer wrapping the M2 mapping graph           (137 tests)
 b99b19f  Fill in M2-complete CLAUDE.md refresh hash                        (130 tests)
@@ -307,16 +310,16 @@ df0a8ae  M0 Day 4 scaffolding: Gemini + Langfuse ready for API keys
 2df890d  M0 Day 1: scaffold
 ```
 
-Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1..7-complete` (per-sub-milestone) and `m2-complete` on `3ff37a7`, `m3-complete` on `36a429f`, `m4.1-complete` on `50fec54`, `m4.2-complete` on `b76cbc1`, `m4.3-complete` on `998b52f`, **`m4-complete`** on `998b52f` (umbrella, latest).
+Tags: `m0-complete` on `afb7c6d`, `m1-code-complete` on `66db0a1`, `m1-complete` on `894ac59`, `m2.1..7-complete` + `m2-complete` on `3ff37a7`, `m3-complete` on `36a429f`, `m4.1-complete` on `50fec54`, `m4.2-complete` on `b76cbc1`, `m4.3-complete` + `m4-complete` on `998b52f`, **`m4.x.1-redesign`** on `4d4a693` (latest, project wrap).
 Public repo: https://github.com/mohammad-alshaer/integration-agent — first push landed mid-M1 session.
 
 ---
 
-## What's left — workstreams after M4
+## Optional future work (project is shipped)
 
-M4 is shipped (umbrella `m4-complete` on `998b52f`). The portfolio shape is end-to-end. Remaining work is **parallel/optional** — pick by what helps the Dar CIO demo or the resume narrative most. Ordered by impact-to-effort:
+The product is wrapped (latest `4d4a693`, tag `m4.x.1-redesign`). End-to-end CLI → API → polished UI on the public repo. Everything below is **genuinely optional** — pick up only if you return to the project. Listed at impact-to-effort for whoever picks it up next.
 
-### M5 — deploy (THE LIKELY NEXT MILESTONE)
+### M5 — deploy (most useful future addition)
 
 Get the demo onto a real URL so it's not just a localhost screenshot. Two pieces:
 - **API**: deploy `apps/api` somewhere with persistent storage for `.duckdb/` and `.cache/`. Free-ish options: fly.io (free tier covers the volume) or Render (free tier). Both support a `Dockerfile` build with the existing pip install workflow. Need to bake `tmp/profiles/aw2022_filtered.json` + `tmp/profiles/awdw2022.json` and `benchmarks/adventureworks/samples/` into the image so demo runs work out of the box.
@@ -341,9 +344,9 @@ Replace the M4.2 spinner-only UX with Server-Sent Events emitting per-node graph
 - **Save/export `MapResponse`** as JSON or markdown from the `/map` result panel.
 - **JS-side tests** (Vitest + Playwright) when regressions actually appear. None today.
 
-### M4 retrospective — what shipped, what didn't
+### M4 / M4.x.1 retrospective — what shipped, what didn't
 
-Shipped: 6 routes, DESIGN.md-driven theme, profile-upload form with abort-able 10s–5min UX, eval browser with rates matrix, polled HealthPill + opt-in deep probe page, three sub-milestone commits + the umbrella `m4-complete` tag. Did NOT ship: shadcn primitives (hand-rolled small components instead — paid off), JS-side tests (deferred to M4.x), `/openapi.json` type auto-gen (deferred), streaming progress (M3.1), demo-profile auto-loader (M4.x).
+Shipped: 6 routes, DESIGN.md-driven theme, profile-upload form with abort-able 10s–5min UX + drag-drop dropzone, eval browser with rates matrix, polled HealthPill + opt-in deep probe page, three M4 sub-milestones + the M4.x.1 redesign pass (aurora layout + glass language across every route + CSS page transitions). Did NOT ship: shadcn primitives (hand-rolled small components instead — paid off), JS-side tests, `/openapi.json` type auto-gen, streaming progress (M3.1), demo-profile auto-loader.
 
 ---
 
