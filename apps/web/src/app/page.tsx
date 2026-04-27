@@ -8,7 +8,15 @@ export default function HomePage() {
   return (
     <>
       <Brand />
-      <main className="flex-1">
+      <main className="flex-1 relative">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-[420px] opacity-50"
+          style={{
+            background:
+              "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(0,7,205,0.18), rgba(15,15,15,0) 60%)",
+          }}
+        />
         <Container>
           <PageHeader
             overline="multi-agent dataops"

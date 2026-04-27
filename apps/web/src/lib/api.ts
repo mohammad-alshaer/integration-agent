@@ -132,6 +132,17 @@ export interface MapResponse {
   elapsed_sec: number;
 }
 
+export interface HealthResponse {
+  status: "ok";
+  llm_provider: string;
+  llm_model: string;
+  embedder_provider: string;
+  embedder_model: string;
+  embedder_dims: number;
+  vector_db_exists: boolean;
+  deep_check: Record<string, unknown> | null;
+}
+
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -178,3 +189,6 @@ export const submitMap = (body: MapRequest, signal?: AbortSignal) =>
     body: JSON.stringify(body),
     signal,
   });
+
+export const getHealth = (deep = false, signal?: AbortSignal) =>
+  apiFetch<HealthResponse>(`/health${deep ? "?deep=true" : ""}`, { signal });

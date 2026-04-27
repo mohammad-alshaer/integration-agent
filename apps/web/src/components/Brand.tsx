@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { Container } from "./Container";
+import { HealthPill } from "./HealthPill";
 
 export function Brand() {
   return (
     <header className="border-b border-mist-06">
       <Container>
-        <div className="flex items-center justify-between py-6">
+        <div className="flex items-center justify-between gap-4 py-6 flex-wrap">
           <Link href="/" className="flex items-center gap-3 group">
             <span className="font-mono text-[11px] uppercase tracking-[0.55px] text-whisper">
               M2 · 78.9% / 96.7%
@@ -15,14 +16,17 @@ export function Brand() {
               integration-agent
             </span>
           </Link>
-          <nav className="flex gap-8 text-base">
-            <Link href="/eval" className="text-ghost hover:text-white transition-colors">
-              evaluations
-            </Link>
-            <Link href="/map" className="text-ghost hover:text-white transition-colors">
-              map
-            </Link>
-          </nav>
+          <div className="flex items-center gap-6 sm:gap-8">
+            <nav className="flex gap-6 sm:gap-8 text-base">
+              <Link href="/eval" className="text-ghost hover:text-white transition-colors">
+                evaluations
+              </Link>
+              <Link href="/map" className="text-ghost hover:text-white transition-colors">
+                map
+              </Link>
+            </nav>
+            <HealthPill />
+          </div>
         </div>
       </Container>
     </header>
